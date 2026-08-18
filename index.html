@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Treino Híbrido</title>
 <link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="icon-192.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#1B1B1D">
@@ -168,6 +170,21 @@ html, body {
 .th-body-list-row b { color: var(--chalk); }
 
 .th-pr-tag { display: inline-block; margin-left: 6px; font-size: 10px; color: var(--yellow); font-family: var(--font-mono); }
+
+/* weekly summary */
+.th-week-summary { display: flex; align-items: center; justify-content: center; gap: 6px; font-family: var(--font-mono); font-size: 12px; color: var(--muted); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 8px; margin-bottom: 14px; }
+.th-week-summary b { color: var(--green); font-size: 14px; }
+
+/* variant selector */
+.th-variant-row { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
+.th-variant-label { font-family: var(--font-mono); font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+.th-variant-select { background: var(--surface-2); border: 1px solid var(--line); border-radius: 6px; padding: 4px 6px; color: var(--chalk); font-size: 12px; font-family: var(--font-body); max-width: 220px; }
+
+/* history row actions */
+.th-history-actions { white-space: nowrap; }
+.th-history-edit, .th-history-del { background: none; border: 1px solid var(--line); border-radius: 5px; color: var(--muted); font-size: 11px; padding: 2px 6px; cursor: pointer; margin-left: 4px; }
+.th-history-edit:hover, .th-history-del:hover { color: var(--chalk); }
+.th-body-list-row { align-items: center; }
 </style>
 </head>
 <body>
@@ -182,6 +199,10 @@ html, body {
 // ============================================================
 const SUPABASE_URL = 'https://gsopyttcjgmxlggcljou.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_sctTSko__bvkZ0EGCaCrMg_8Fh3sJD1';
+// Código de acesso enviado em toda leitura/escrita — checado pelas policies
+// RLS no banco (função public.has_access_code()). Ver CLAUDE.md para como
+// trocar/revogar. Sem o código certo, o banco responde vazio (sem dados).
+const ACCESS_CODE = 'lzg0oHK31DLuP_r4dQwXmNfT1cIG2O1Z';
 // ============================================================
 
 const BADGE_COLOR_MAP = { yellow: 'var(--yellow)', red: 'var(--red)', green: 'var(--green)', blue: 'var(--blue)' };
@@ -213,10 +234,48 @@ let liveList = [];
 let liveIndex = 0;
 let liveOpen = false;
 
+let selectedVariant = {}; // exercise_id -> alternative name or null (main)
+
 const root = document.getElementById('root');
 
 function themeColor(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
 function formatDate(iso) { const [y,m,d] = iso.split('-'); return `${d}/${m}/${y.slice(2)}`; }
+function escapeAttr(s) { return String(s).replace(/"/g, '&quot;'); }
+
+function getWeekRange(dateStr) {
+  const d = new Date(dateStr + 'T12:00:00');
+  const dow = d.getDay(); // 0=dom..6=sab
+  const diffToMonday = dow === 0 ? -6 : 1 - dow;
+  const monday = new Date(d); monday.setDate(d.getDate() + diffToMonday);
+  const sunday = new Date(monday); sunday.setDate(monday.getDate() + 6);
+  return { monday, sunday };
+}
+
+async function refreshWeekSummary() {
+  const el = document.getElementById('weekSummary');
+  if (!el) return;
+  try {
+    const { monday, sunday } = getWeekRange(todayStr);
+    const mondayStr = monday.toISOString().slice(0, 10);
+    const sundayStr = sunday.toISOString().slice(0, 10);
+    const [{ data: setDates, error: e1 }, { data: runDates, error: e2 }] = await Promise.all([
+      sb.from('set_logs').select('log_date').gte('log_date', mondayStr).lte('log_date', sundayStr),
+      sb.from('run_logs').select('log_date').gte('log_date', mondayStr).lte('log_date', sundayStr),
+    ]);
+    if (e1) throw e1;
+    if (e2) throw e2;
+    const loggedDates = new Set([...(setDates || []), ...(runDates || [])].map(r => r.log_date));
+    const trainingDayKeys = new Set(days.filter(d => d.badge_kind === 'plate' || d.badge_kind === 'lane').map(d => d.key));
+    const trainedKeys = new Set();
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(monday); d.setDate(monday.getDate() + i);
+      const key = DOW_TO_KEY[d.getDay()];
+      const dStr = d.toISOString().slice(0, 10);
+      if (trainingDayKeys.has(key) && loggedDates.has(dStr)) trainedKeys.add(key);
+    }
+    el.innerHTML = `<b>${trainedKeys.size}/${trainingDayKeys.size}</b> dias treinados essa semana`;
+  } catch (e) { /* resumo semanal é um bônus; não deve travar o resto do app */ }
+}
 
 function fail(msg) {
   root.innerHTML = `<div class="th-loading" style="color:var(--yellow)">⚠️ ${msg}</div>`;
@@ -228,7 +287,9 @@ async function init() {
     return;
   }
   try {
-    sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      global: { headers: { 'x-app-code': ACCESS_CODE } },
+    });
   } catch (e) {
     fail('Não consegui iniciar o Supabase. Confira se a URL e a chave estão corretas.');
     return;
@@ -280,6 +341,7 @@ function renderShell() {
     <div class="th-nav-row">
       <button class="th-nav-btn" id="navProgress">📈 Ver progresso</button>
     </div>
+    <div class="th-week-summary" id="weekSummary"></div>
     <div class="th-tabs" id="thTabs"></div>
     <div id="thDayArea"></div>
     <div class="th-hint" id="thStatus">Conectado ao banco ✓</div>
@@ -291,6 +353,7 @@ function renderShell() {
   });
   ensureLiveOverlay();
   ensureToast();
+  refreshWeekSummary();
 }
 
 function ensureToast() {
@@ -353,6 +416,7 @@ function renderTabs() {
   tabs.querySelectorAll('.th-tab').forEach(tab => {
     tab.addEventListener('click', () => {
       activeDayKey = tab.getAttribute('data-key');
+      selectedVariant = {};
       tabs.querySelectorAll('.th-tab').forEach(t => t.setAttribute('data-active', 'false'));
       tab.setAttribute('data-active', 'true');
       renderDay();
@@ -389,10 +453,19 @@ function renderExercise(ex) {
   const alt = ex.alternatives || [];
   const how = ex.howto || [];
   const suggestion = lastKnownWeight[ex.id] ? `<div class="th-suggestion">último registro: ${lastKnownWeight[ex.id]}kg</div>` : '';
+  const selectedName = selectedVariant[ex.id] || '';
+  const variantRow = alt.length ? `<div class="th-variant-row">
+      <label class="th-variant-label">Fazendo:</label>
+      <select class="th-variant-select" data-variant-select="${ex.id}">
+        <option value="" ${selectedName === '' ? 'selected' : ''}>${ex.name}</option>
+        ${alt.map(a => `<option value="${escapeAttr(a.name)}" ${selectedName === a.name ? 'selected' : ''}>${a.name}</option>`).join('')}
+      </select>
+    </div>` : '';
 
   return `<div class="th-ex">
     <div class="th-ex-name">${ex.name}</div>
     ${ex.note ? `<div class="th-ex-note">${ex.note}</div>` : ''}
+    ${variantRow}
     <div class="th-ex-row">
       <span class="th-ex-scheme">${ex.scheme || ''}</span>
       <div class="th-dots">${dots}</div>
@@ -501,6 +574,13 @@ function attachDayEvents(day) {
     dot.addEventListener('click', () => logSet(dot.getAttribute('data-ex'), parseInt(dot.getAttribute('data-set'), 10)));
   });
 
+  document.querySelectorAll('[data-variant-select]').forEach(sel => {
+    sel.addEventListener('change', () => {
+      const id = sel.getAttribute('data-variant-select');
+      selectedVariant[id] = sel.value || null;
+    });
+  });
+
   document.querySelectorAll('[data-history-toggle]').forEach(btn => {
     btn.addEventListener('click', () => {
       const id = btn.getAttribute('data-history-toggle');
@@ -545,17 +625,17 @@ function attachDayEvents(day) {
       if (distInput === null) return;
       const durInput = prompt('Tempo (minutos):', '');
       const rpeInput = prompt('Esforço percebido, de 1 (fácil) a 10 (máximo):', '');
+      const distance_km = parseFloat((distInput || '0').replace(',', '.')) || null;
+      const duration_min = parseFloat((durInput || '').replace(',', '.')) || null;
+      const rpe = parseInt(rpeInput, 10) || null;
+      if (!confirm(`Confirmar corrida: ${distance_km ?? '—'}km${duration_min ? ' em ' + duration_min + 'min' : ''}${rpe ? ' · RPE ' + rpe : ''}?`)) return;
       try {
-        const { error } = await sb.from('run_logs').insert({
-          day_key: day.key, log_date: todayStr,
-          distance_km: parseFloat((distInput||'0').replace(',', '.')) || null,
-          duration_min: parseFloat((durInput||'').replace(',', '.')) || null,
-          rpe: parseInt(rpeInput, 10) || null,
-        });
+        const { error } = await sb.from('run_logs').insert({ day_key: day.key, log_date: todayStr, distance_km, duration_min, rpe });
         if (error) throw error;
         setStatus(true);
         document.getElementById('runLogged-' + day.key).innerHTML =
-          `<div class="th-run-logged">✓ registrado: ${distInput}km${durInput ? ' em ' + durInput + 'min' : ''}${rpeInput ? ' · RPE ' + rpeInput : ''}</div>`;
+          `<div class="th-run-logged">✓ registrado: ${distance_km}km${duration_min ? ' em ' + duration_min + 'min' : ''}${rpe ? ' · RPE ' + rpe : ''}</div>`;
+        refreshWeekSummary();
       } catch (e) { setStatus(false, 'Não consegui salvar a corrida: ' + (e.message || e)); }
     });
   }
@@ -595,6 +675,9 @@ async function logSet(exId, setNum) {
   if (!m) { alert('Não entendi. Use o formato 60x8 (peso x repetições).'); return; }
   const weight = parseFloat(m[1].replace(',', '.'));
   const reps = parseInt(m[2], 10);
+  const variant = selectedVariant[exId] || null;
+
+  if (!confirm(`Confirmar: ${weight}kg × ${reps} reps${variant ? ' — ' + variant + ' (alt)' : ''}?`)) return;
 
   let isRecord = false;
   try {
@@ -604,7 +687,8 @@ async function logSet(exId, setNum) {
   } catch (e) { /* PR check is a bonus; ignore failures */ }
 
   try {
-    const { error } = await sb.from('set_logs').insert({ exercise_id: exId, set_number: setNum, weight, reps, log_date: todayStr });
+    const { error } = await sb.from('set_logs')
+      .upsert({ exercise_id: exId, set_number: setNum, weight, reps, log_date: todayStr, variant_name: variant }, { onConflict: 'exercise_id,set_number,log_date' });
     if (error) throw error;
     setStatus(true);
     if (isRecord) {
@@ -616,6 +700,42 @@ async function logSet(exId, setNum) {
 
   await renderDay();
   if (liveOpen) renderLive();
+  refreshWeekSummary();
+}
+
+async function editSetLog(logId, exId) {
+  const logs = historyCache[exId] || [];
+  const row = logs.find(l => String(l.id) === String(logId));
+  if (!row) return;
+  const input = prompt('Peso × reps (ex: 60x8)', row.weight != null ? `${row.weight}x${row.reps != null ? row.reps : ''}` : '');
+  if (input === null) return;
+  const m = input.match(/([\d.,]+)\s*[x×]\s*(\d+)/i);
+  if (!m) { alert('Não entendi. Use o formato 60x8 (peso x repetições).'); return; }
+  const weight = parseFloat(m[1].replace(',', '.'));
+  const reps = parseInt(m[2], 10);
+  if (!confirm(`Confirmar edição: ${weight}kg × ${reps} reps em ${formatDate(row.log_date)}?`)) return;
+  try {
+    const { error } = await sb.from('set_logs').update({ weight, reps }).eq('id', logId);
+    if (error) throw error;
+    setStatus(true);
+    delete historyCache[exId];
+    await loadAndRenderHistory(exId);
+    await renderDay();
+    refreshWeekSummary();
+  } catch (e) { setStatus(false, 'Não consegui editar essa série: ' + (e.message || e)); }
+}
+
+async function deleteSetLog(logId, exId) {
+  if (!confirm('Apagar esse registro? Essa ação não pode ser desfeita.')) return;
+  try {
+    const { error } = await sb.from('set_logs').delete().eq('id', logId);
+    if (error) throw error;
+    setStatus(true);
+    delete historyCache[exId];
+    await loadAndRenderHistory(exId);
+    await renderDay();
+    refreshWeekSummary();
+  } catch (e) { setStatus(false, 'Não consegui apagar esse registro: ' + (e.message || e)); }
 }
 
 // ============================================================
@@ -638,14 +758,28 @@ async function loadAndRenderHistory(exId) {
       return;
     }
     canvasEl.style.display = 'block';
-    tableEl.innerHTML = `<table class="th-history-table"><thead><tr><th>Data</th><th>Série</th><th>Peso</th><th>Reps</th></tr></thead><tbody>
-      ${logs.map(l => `<tr><td>${formatDate(l.log_date)}</td><td>${l.set_number}</td><td>${l.weight != null ? l.weight + 'kg' : '—'}</td><td>${l.reps != null ? l.reps : '—'}</td></tr>`).join('')}
+    tableEl.innerHTML = `<table class="th-history-table"><thead><tr><th>Data</th><th>Série</th><th>Peso</th><th>Reps</th><th>Variante</th><th></th></tr></thead><tbody>
+      ${logs.map(l => `<tr>
+        <td>${formatDate(l.log_date)}</td>
+        <td>${l.set_number}</td>
+        <td>${l.weight != null ? l.weight + 'kg' : '—'}</td>
+        <td>${l.reps != null ? l.reps : '—'}</td>
+        <td>${l.variant_name ? l.variant_name + ' (alt)' : '—'}</td>
+        <td class="th-history-actions">
+          <button class="th-history-edit" data-edit-set="${l.id}">✎</button>
+          <button class="th-history-del" data-del-set="${l.id}">🗑</button>
+        </td>
+      </tr>`).join('')}
     </tbody></table>`;
+    tableEl.querySelectorAll('[data-edit-set]').forEach(btn => btn.addEventListener('click', () => editSetLog(btn.getAttribute('data-edit-set'), exId)));
+    tableEl.querySelectorAll('[data-del-set]').forEach(btn => btn.addEventListener('click', () => deleteSetLog(btn.getAttribute('data-del-set'), exId)));
 
     const byDate = {};
     logs.forEach(l => {
       if (l.weight == null) return;
-      if (!(l.log_date in byDate) || l.weight > byDate[l.log_date]) byDate[l.log_date] = Number(l.weight);
+      if (!(l.log_date in byDate) || l.weight > byDate[l.log_date].weight) {
+        byDate[l.log_date] = { weight: Number(l.weight), variant: l.variant_name || null };
+      }
     });
     const dates = Object.keys(byDate).sort();
 
@@ -656,7 +790,7 @@ async function loadAndRenderHistory(exId) {
         labels: dates.map(formatDate),
         datasets: [{
           label: 'Peso máx (kg)',
-          data: dates.map(d => byDate[d]),
+          data: dates.map(d => byDate[d].weight),
           borderColor: themeColor('--yellow'),
           backgroundColor: themeColor('--yellow'),
           tension: 0.25,
@@ -665,7 +799,17 @@ async function loadAndRenderHistory(exId) {
       },
       options: {
         responsive: true,
-        plugins: { legend: { display: false } },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label: (ctx) => {
+                const v = byDate[dates[ctx.dataIndex]].variant;
+                return `${ctx.parsed.y}kg${v ? ' — ' + v + ' (alt)' : ''}`;
+              },
+            },
+          },
+        },
         scales: {
           x: { ticks: { color: themeColor('--muted'), font: { size: 10 } }, grid: { color: themeColor('--line') } },
           y: { ticks: { color: themeColor('--muted'), font: { size: 10 } }, grid: { color: themeColor('--line') } },
@@ -752,9 +896,10 @@ function renderLive() {
     return `<button class="th-dot" data-live-ex="${ex.id}" data-live-set="${setNum}" data-done="${!!log}" style="${log ? 'background:var(--green);border-color:transparent;' : ''}">${label}</button>`;
   }).join('');
 
+  const variant = selectedVariant[ex.id];
   content.innerHTML = `
     <div class="th-live-counter">Exercício ${liveIndex + 1} / ${liveList.length}</div>
-    <div class="th-live-name">${ex.name}</div>
+    <div class="th-live-name">${ex.name}${variant ? ` <span style="color:var(--muted);font-size:16px">— ${variant} (alt)</span>` : ''}</div>
     <div class="th-live-scheme">${ex.scheme || ''}</div>
     <div class="th-dots th-live-dots">${dots}</div>
     ${ex.note ? `<div class="th-ex-note">${ex.note}</div>` : ''}
@@ -775,6 +920,7 @@ async function renderProgressView() {
     <div class="th-title">Progresso</div>
     <button class="th-back-btn" id="backToDay">← Voltar ao treino</button>
     <div class="th-card" id="streakCard"><div class="th-loading">Carregando…</div></div>
+    <div class="th-card" id="runLogCard"><div class="th-loading">Carregando…</div></div>
     <div class="th-card" id="bodyCard"><div class="th-loading">Carregando…</div></div>
     <div class="th-hint" id="thStatus">Conectado ao banco ✓</div>
   `;
@@ -784,7 +930,64 @@ async function renderProgressView() {
     renderDay();
   });
   await renderStreak();
+  await renderRunLogsSection();
   await renderBodySection();
+}
+
+async function renderRunLogsSection() {
+  const card = document.getElementById('runLogCard');
+  try {
+    const { data, error } = await sb.from('run_logs').select('*').order('log_date', { ascending: false }).limit(20);
+    if (error) throw error;
+    const rows = data || [];
+    card.innerHTML = `<div class="th-section-label" style="margin-top:0">Corridas registradas</div>` +
+      (rows.length
+        ? `<div class="th-body-list">${rows.map(r => {
+            const dayName = (days.find(d => d.key === r.day_key) || {}).name || r.day_key;
+            return `<div class="th-body-list-row">
+              <span>${formatDate(r.log_date)} · ${dayName}</span>
+              <span><b>${r.distance_km != null ? r.distance_km + 'km' : '—'}</b>${r.duration_min ? ' · ' + r.duration_min + 'min' : ''}${r.rpe ? ' · RPE ' + r.rpe : ''}
+                <button class="th-history-edit" data-edit-run="${r.id}">✎</button>
+                <button class="th-history-del" data-del-run="${r.id}">🗑</button>
+              </span>
+            </div>`;
+          }).join('')}</div>`
+        : `<div class="th-history-empty">Ainda sem corridas registradas.</div>`);
+    card.querySelectorAll('[data-edit-run]').forEach(btn => btn.addEventListener('click', () => editRunLog(btn.getAttribute('data-edit-run'))));
+    card.querySelectorAll('[data-del-run]').forEach(btn => btn.addEventListener('click', () => deleteRunLog(btn.getAttribute('data-del-run'))));
+  } catch (e) {
+    card.innerHTML = `<div class="th-history-empty">Não consegui carregar as corridas: ${e.message || e}</div>`;
+  }
+}
+
+async function editRunLog(id) {
+  try {
+    const { data, error } = await sb.from('run_logs').select('*').eq('id', id).single();
+    if (error) throw error;
+    const distInput = prompt('Distância percorrida (km):', data.distance_km ?? '');
+    if (distInput === null) return;
+    const durInput = prompt('Tempo (minutos):', data.duration_min ?? '');
+    const rpeInput = prompt('Esforço percebido, de 1 (fácil) a 10 (máximo):', data.rpe ?? '');
+    const distance_km = parseFloat((distInput || '').replace(',', '.')) || null;
+    const duration_min = parseFloat((durInput || '').replace(',', '.')) || null;
+    const rpe = parseInt(rpeInput, 10) || null;
+    if (!confirm(`Confirmar edição: ${distance_km ?? '—'}km${duration_min ? ' em ' + duration_min + 'min' : ''}${rpe ? ' · RPE ' + rpe : ''}?`)) return;
+    const { error: upErr } = await sb.from('run_logs').update({ distance_km, duration_min, rpe }).eq('id', id);
+    if (upErr) throw upErr;
+    setStatus(true);
+    await renderRunLogsSection();
+  } catch (e) { setStatus(false, 'Não consegui editar a corrida: ' + (e.message || e)); }
+}
+
+async function deleteRunLog(id) {
+  if (!confirm('Apagar esse registro de corrida? Essa ação não pode ser desfeita.')) return;
+  try {
+    const { error } = await sb.from('run_logs').delete().eq('id', id);
+    if (error) throw error;
+    setStatus(true);
+    await renderRunLogsSection();
+    refreshWeekSummary();
+  } catch (e) { setStatus(false, 'Não consegui apagar a corrida: ' + (e.message || e)); }
 }
 
 async function renderStreak() {
@@ -865,16 +1068,40 @@ async function saveBodyMeasurement() {
   const waist = parseFloat((document.getElementById('bmWaist').value || '').replace(',', '.'));
   const arm = parseFloat((document.getElementById('bmArm').value || '').replace(',', '.'));
   if (!weight) { alert('Informe o peso (kg).'); return; }
+  const waistOk = !isNaN(waist), armOk = !isNaN(arm);
+  if (!confirm(`Confirmar: ${weight}kg em ${formatDate(date)}${waistOk ? ' · cintura ' + waist + 'cm' : ''}${armOk ? ' · braço ' + arm + 'cm' : ''}?`)) return;
   try {
     const { error } = await sb.from('body_measurements').upsert({
       date, weight_kg: weight,
-      waist_cm: isNaN(waist) ? null : waist,
-      arm_cm: isNaN(arm) ? null : arm,
+      waist_cm: waistOk ? waist : null,
+      arm_cm: armOk ? arm : null,
     });
     if (error) throw error;
     setStatus(true);
     await loadAndRenderBodyMeasurements();
   } catch (e) { setStatus(false, 'Não consegui salvar a medida: ' + (e.message || e)); }
+}
+
+async function editBodyMeasurement(date) {
+  try {
+    const { data, error } = await sb.from('body_measurements').select('*').eq('date', date).single();
+    if (error) throw error;
+    document.getElementById('bmDate').value = data.date;
+    document.getElementById('bmWeight').value = data.weight_kg ?? '';
+    document.getElementById('bmWaist').value = data.waist_cm ?? '';
+    document.getElementById('bmArm').value = data.arm_cm ?? '';
+    document.getElementById('bmDate').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  } catch (e) { setStatus(false, 'Não consegui carregar essa medida: ' + (e.message || e)); }
+}
+
+async function deleteBodyMeasurement(date) {
+  if (!confirm('Apagar o registro de peso de ' + formatDate(date) + '? Essa ação não pode ser desfeita.')) return;
+  try {
+    const { error } = await sb.from('body_measurements').delete().eq('date', date);
+    if (error) throw error;
+    setStatus(true);
+    await loadAndRenderBodyMeasurements();
+  } catch (e) { setStatus(false, 'Não consegui apagar essa medida: ' + (e.message || e)); }
 }
 
 async function loadAndRenderBodyMeasurements() {
@@ -914,8 +1141,16 @@ async function loadAndRenderBodyMeasurements() {
       },
     });
     listEl.innerHTML = rows.slice(-10).reverse().map(r =>
-      `<div class="th-body-list-row"><span>${formatDate(r.date)}</span><b>${r.weight_kg}kg</b>${r.waist_cm ? ` · cintura ${r.waist_cm}cm` : ''}${r.arm_cm ? ` · braço ${r.arm_cm}cm` : ''}</div>`
+      `<div class="th-body-list-row">
+        <span>${formatDate(r.date)}</span>
+        <span><b>${r.weight_kg}kg</b>${r.waist_cm ? ` · cintura ${r.waist_cm}cm` : ''}${r.arm_cm ? ` · braço ${r.arm_cm}cm` : ''}
+          <button class="th-history-edit" data-edit-bm="${r.date}">✎</button>
+          <button class="th-history-del" data-del-bm="${r.date}">🗑</button>
+        </span>
+      </div>`
     ).join('');
+    listEl.querySelectorAll('[data-edit-bm]').forEach(btn => btn.addEventListener('click', () => editBodyMeasurement(btn.getAttribute('data-edit-bm'))));
+    listEl.querySelectorAll('[data-del-bm]').forEach(btn => btn.addEventListener('click', () => deleteBodyMeasurement(btn.getAttribute('data-del-bm'))));
   } catch (e) {
     listEl.innerHTML = `<div class="th-history-empty">Não consegui carregar o histórico de peso: ${e.message || e}</div>`;
   }

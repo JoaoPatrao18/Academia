@@ -3,8 +3,9 @@
 -- tabelas usadas por index.html. Depois rode seed.sql (se existir) para
 -- popular days/exercises/run_sessions/run_progression.
 --
--- Todas as tabelas usam RLS "allow all" (to public) porque este é um app
--- pessoal de usuário único acessado só com a chave anon — não há login.
+-- Este é um app pessoal de usuário único, sem login de verdade: o acesso é
+-- protegido por um "código de acesso" simples checado nas policies RLS via
+-- a função public.has_access_code() (ver seção RLS abaixo e CLAUDE.md).
 
 -- ── Tabelas de conteúdo (dias, exercícios, corrida) ─────────────────────────
 
@@ -63,7 +64,9 @@ create table if not exists public.set_logs (
   exercise_id bigint not null references public.exercises(id),
   set_number integer not null,
   weight numeric,
-  reps integer
+  reps integer,
+  variant_name text,          -- nome da alternativa feita em vez do exercício principal (null = principal)
+  unique (exercise_id, set_number, log_date)  -- 1 registro por série/dia; refazer a mesma série faz upsert
 );
 
 create table if not exists public.run_logs (
@@ -85,7 +88,27 @@ create table if not exists public.body_measurements (
   created_at timestamptz default now()
 );
 
--- ── RLS ─────────────────────────────────────────────────────────────────────
+-- ── RLS: proteção por código de acesso ──────────────────────────────────────
+--
+-- index.html envia um header "x-app-code" em toda chamada ao Supabase
+-- (constante ACCESS_CODE no topo do <script>). A função abaixo compara esse
+-- header com o código configurado; as policies de cada tabela só liberam
+-- leitura/escrita se a função retornar true. Sem o header certo, a API
+-- responde 200 com resultado vazio (não vaza dado nem erro revelador).
+--
+-- Para trocar/revogar o código: rode este CREATE OR REPLACE FUNCTION de novo
+-- com um novo valor, e atualize ACCESS_CODE em index.html com o mesmo valor.
+
+create or replace function public.has_access_code()
+returns boolean
+language sql
+stable
+as $$
+  select coalesce(current_setting('request.headers', true)::json->>'x-app-code', '') = 'TROQUE_ESTE_CODIGO';
+$$;
+
+revoke all on function public.has_access_code() from public;
+grant execute on function public.has_access_code() to anon, authenticated;
 
 alter table public.days enable row level security;
 alter table public.exercises enable row level security;
@@ -102,10 +125,8 @@ declare
 begin
   foreach t in array array['days','exercises','run_sessions','run_progression','settings','set_logs','run_logs','body_measurements']
   loop
-    if not exists (
-      select 1 from pg_policies where schemaname = 'public' and tablename = t and policyname = 'allow all - ' || t
-    ) then
-      execute format('create policy %I on public.%I for all to public using (true) with check (true);', 'allow all - ' || t, t);
-    end if;
+    execute format('drop policy if exists %I on public.%I;', 'allow all - ' || t, t);
+    execute format('drop policy if exists %I on public.%I;', 'access code - ' || t, t);
+    execute format('create policy %I on public.%I for all to public using (public.has_access_code()) with check (public.has_access_code());', 'access code - ' || t, t);
   end loop;
 end $$;
