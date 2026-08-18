@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Treino Híbrido</title>
+<link rel="manifest" href="manifest.json">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#1B1B1D">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap');
+
+:root {
+  --bg: #1B1B1D;
+  --surface: #222225;
+  --surface-2: #2B2B2F;
+  --chalk: #F1EFE9;
+  --muted: #93939A;
+  --line: #38383D;
+  --red: #E4402E;
+  --blue: #3B7CF0;
+  --yellow: #E4B92E;
+  --green: #3EA35B;
+  --plate5: #D8D5CC;
+  --font-display: 'Oswald', 'Arial Narrow', sans-serif;
+  --font-body: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body {
+  background: var(--bg);
+  color: var(--chalk);
+  font-family: var(--font-body);
+  margin: 0;
+  min-height: 100%;
+}
+#root {
+  padding: 18px 14px 40px;
+  max-width: 480px;
+  margin: 0 auto;
+}
+
+.th-eyebrow { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.14em; color: var(--muted); text-transform: uppercase; margin-bottom: 4px; }
+.th-title { font-family: var(--font-display); font-weight: 700; font-size: 26px; letter-spacing: 0.01em; text-transform: uppercase; margin: 0 0 2px; }
+.th-legend { font-size: 12px; color: var(--muted); line-height: 1.5; margin-bottom: 16px; }
+
+.th-tabs { display: flex; gap: 8px; overflow-x: auto; padding: 4px 2px 10px; scrollbar-width: none; }
+.th-tabs::-webkit-scrollbar { display: none; }
+.th-tab { flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; gap: 6px; background: none; border: none; padding: 4px 2px 0; cursor: pointer; min-width: 44px; color: var(--muted); }
+.th-tab-badge { width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-family: var(--font-mono); font-weight: 600; font-size: 11px; border: 2px solid var(--line); color: var(--chalk); position: relative; }
+.th-tab[data-active="true"] .th-tab-badge { transform: scale(1.08); }
+.th-tab-today::after { content: ''; position: absolute; top: -6px; left: 50%; transform: translateX(-50%); width: 4px; height: 4px; border-radius: 50%; background: var(--chalk); }
+.th-tab-label { font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; font-weight: 600; }
+.th-tab[data-active="true"] .th-tab-label { color: var(--chalk); }
+
+.th-card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 16px; margin-bottom: 12px; }
+.th-day-head { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+.th-day-badge-big { width: 52px; height: 52px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-family: var(--font-mono); font-weight: 600; font-size: 14px; flex-shrink: 0; border: 2px solid transparent; }
+.th-day-badge-lane { width: 52px; height: 52px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-family: var(--font-mono); font-weight: 600; font-size: 12px; flex-shrink: 0; border: 2px solid transparent; }
+.th-day-name { font-family: var(--font-display); font-weight: 700; font-size: 22px; text-transform: uppercase; line-height: 1.05; }
+.th-day-focus { font-size: 13px; color: var(--muted); margin-top: 2px; }
+
+.th-section-label { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); margin: 18px 0 8px; }
+.th-section-label:first-of-type { margin-top: 0; }
+
+.th-ex { border-top: 1px solid var(--line); padding: 12px 0; }
+.th-ex:first-of-type { border-top: none; padding-top: 0; }
+.th-ex-name { font-weight: 600; font-size: 15px; margin-bottom: 2px; }
+.th-ex-note { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+.th-ex-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.th-ex-scheme { font-family: var(--font-mono); font-size: 13px; color: var(--chalk); background: var(--surface-2); border-radius: 6px; padding: 3px 8px; }
+.th-dots { display: flex; gap: 7px; flex-wrap: wrap; }
+.th-dot { min-width: 22px; height: 22px; padding: 0 4px; border-radius: 11px; border: 2px solid var(--line); background: none; cursor: pointer; font-family: var(--font-mono); font-size: 9px; color: var(--chalk); }
+.th-dot[data-done="true"] { border-color: transparent; }
+.th-suggestion { font-family: var(--font-mono); font-size: 11px; color: var(--muted); margin-top: 4px; }
+
+.th-toggle-row { display: flex; gap: 16px; margin-top: 8px; flex-wrap: wrap; }
+.th-alt-toggle { font-family: var(--font-mono); font-size: 11px; color: var(--muted); background: none; border: none; padding: 0; cursor: pointer; text-transform: uppercase; letter-spacing: 0.06em; }
+.th-alt-list { margin-top: 6px; padding-left: 16px; font-size: 13px; color: var(--chalk); display: none; }
+.th-alt-list[data-open="true"] { display: block; }
+.th-alt-list li { margin-bottom: 4px; color: #C9C7C1; line-height: 1.4; }
+.th-alt-link { display: inline-flex; align-items: center; gap: 6px; color: #C9C7C1; text-decoration: none; }
+.th-alt-play { font-size: 9px; color: var(--muted); }
+
+.th-video-link { display: flex; align-items: center; gap: 10px; margin-top: 10px; text-decoration: none; background: var(--surface-2); border-radius: 8px; padding: 6px; border: 1px solid var(--line); }
+.th-video-thumb { width: 64px; height: 36px; object-fit: cover; border-radius: 4px; background: var(--bg); flex-shrink: 0; }
+.th-video-play { color: var(--chalk); font-size: 11px; opacity: 0.7; }
+.th-video-label { font-family: var(--font-mono); font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+
+.th-diagram { display: none; margin-top: 10px; background: var(--surface-2); border-radius: 8px; padding: 8px; color: var(--chalk); }
+.th-diagram[data-open="true"] { display: block; }
+.th-diagram svg { width: 100%; height: auto; display: block; }
+
+.th-run-box { display: flex; align-items: baseline; gap: 8px; margin-top: 4px; }
+.th-run-num { font-family: var(--font-mono); font-weight: 600; font-size: 40px; line-height: 1; }
+.th-run-unit { font-family: var(--font-mono); font-size: 14px; color: var(--muted); }
+.th-run-desc { font-size: 13px; color: var(--muted); margin-top: 8px; line-height: 1.5; }
+.th-run-log-btn { margin-top: 12px; width: 100%; padding: 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface-2); color: var(--chalk); font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; cursor: pointer; }
+.th-run-logged { margin-top: 10px; font-size: 13px; color: var(--green); font-family: var(--font-mono); }
+
+.th-week-stepper { display: flex; align-items: center; gap: 12px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
+.th-step-btn { width: 32px; height: 32px; border-radius: 50%; border: 1px solid var(--line); background: var(--surface-2); color: var(--chalk); font-size: 16px; font-family: var(--font-mono); display: flex; align-items: center; justify-content: center; cursor: pointer; }
+.th-step-btn:active { background: var(--line); }
+.th-week-label { font-family: var(--font-mono); font-size: 12px; color: var(--muted); flex: 1; }
+.th-week-label b { color: var(--chalk); }
+.th-recuo-tag { font-family: var(--font-mono); font-size: 10px; color: var(--bg); background: var(--yellow); padding: 2px 6px; border-radius: 4px; margin-left: 6px; vertical-align: middle; }
+
+.th-rest { text-align: center; padding: 30px 10px; }
+.th-rest-title { font-family: var(--font-display); font-size: 20px; text-transform: uppercase; margin-bottom: 6px; }
+.th-rest-sub { font-size: 13px; color: var(--muted); }
+
+.th-hint { font-size: 11px; color: var(--muted); text-align: center; margin-top: 16px; line-height: 1.5; }
+.th-loading { text-align: center; padding: 60px 10px; color: var(--muted); font-family: var(--font-mono); font-size: 13px; }
+</style>
+</head>
+<body>
+<div id="root">
+  <div class="th-loading">Carregando…</div>
+</div>
+
+<script>
+// ============================================================
+// CONFIGURAÇÃO — cole aqui a URL e a chave "anon" do seu projeto
+// Supabase (Project Settings > API). Sem isso o app não conecta.
+// ============================================================
+const SUPABASE_URL = 'https://gsopyttcjgmxlggcljou.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_sctTSko__bvkZ0EGCaCrMg_8Fh3sJD1';
+// ============================================================
+
+const BADGE_COLOR_MAP = { yellow: 'var(--yellow)', red: 'var(--red)', green: 'var(--green)', blue: 'var(--blue)' };
+const DOW_TO_KEY = ['dom','seg','ter','qua','qui','sex','sab']; // JS getDay() index
+
+let sb = null;
+let days = [];
+let exercisesByDay = {};   // day_key -> [exercise]
+let runByDay = {};         // day_key -> run_session
+let runProgression = [];   // index 0 = week 1
+let currentWeek = 1;
+let activeDayKey = null;
+let todayKey = DOW_TO_KEY[new Date().getDay()];
+let todayStr = new Date().toISOString().slice(0,10);
+let todaySetLogs = {};     // exercise_id -> { setNumber: {weight,reps} }
+let lastKnownWeight = {};  // exercise_id -> weight (most recent ever)
+let connectionOk = false;
+
+const root = document.getElementById('root');
+
+function fail(msg) {
+  root.innerHTML = `<div class="th-loading" style="color:var(--yellow)">⚠️ ${msg}</div>`;
+}
+
+async function init() {
+  if (SUPABASE_URL.includes('COLE_') || SUPABASE_ANON_KEY.includes('COLE_')) {
+    fail('Configuração pendente: abra o código deste arquivo e cole SUPABASE_URL e SUPABASE_ANON_KEY no topo do &lt;script&gt;.');
+    return;
+  }
+  try {
+    sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  } catch (e) {
+    fail('Não consegui iniciar o Supabase. Confira se a URL e a chave estão corretas.');
+    return;
+  }
+
+  try {
+    const [daysRes, exRes, runRes, progRes, settingsRes] = await Promise.all([
+      sb.from('days').select('*').order('order_index'),
+      sb.from('exercises').select('*').order('order_index'),
+      sb.from('run_sessions').select('*'),
+      sb.from('run_progression').select('*').order('week'),
+      sb.from('settings').select('*').eq('key', 'current_week').maybeSingle(),
+    ]);
+    if (daysRes.error) throw daysRes.error;
+    if (exRes.error) throw exRes.error;
+    if (runRes.error) throw runRes.error;
+    if (progRes.error) throw progRes.error;
+
+    days = daysRes.data || [];
+    if (days.length === 0) { fail('Conectei no banco, mas as tabelas estão vazias. Rode o seed.sql no SQL Editor do Supabase.'); return; }
+
+    exercisesByDay = {};
+    (exRes.data || []).forEach(e => {
+      if (!exercisesByDay[e.day_key]) exercisesByDay[e.day_key] = [];
+      exercisesByDay[e.day_key].push(e);
+    });
+    runByDay = {};
+    (runRes.data || []).forEach(r => { runByDay[r.day_key] = r; });
+    runProgression = progRes.data || [];
+    if (settingsRes.data && settingsRes.data.value) {
+      currentWeek = Math.max(1, Math.min(runProgression.length || 10, parseInt(settingsRes.data.value, 10) || 1));
+    }
+    connectionOk = true;
+  } catch (e) {
+    fail('Erro ao conectar no Supabase: ' + (e.message || e) + '. Confira URL/chave e se rodou o schema.sql + seed.sql.');
+    return;
+  }
+
+  activeDayKey = days.some(d => d.key === todayKey) ? todayKey : days[0].key;
+  renderShell();
+  await renderDay();
+}
+
+function renderShell() {
+  root.innerHTML = `
+    <div class="th-eyebrow">João · Treino Híbrido</div>
+    <div class="th-title">Qual série hoje?</div>
+    <div class="th-legend">Número na anilha = intensidade do dia. Toque numa série pra registrar peso × reps.</div>
+    <div class="th-tabs" id="thTabs"></div>
+    <div id="thDayArea"></div>
+    <div class="th-hint" id="thStatus">Conectado ao banco ✓</div>
+  `;
+  renderTabs();
+}
+
+function badgeHTML(day, big) {
+  const color = BADGE_COLOR_MAP[day.badge_color] || 'var(--muted)';
+  if (day.badge_kind === 'plate') {
+    const cls = big ? 'th-day-badge-big' : 'th-tab-badge';
+    return `<div class="${cls}" style="background:${color}22;border-color:${color}">${day.badge_kg}</div>`;
+  }
+  if (day.badge_kind === 'lane') {
+    const cls = big ? 'th-day-badge-lane' : 'th-tab-badge';
+    return `<div class="${cls}" style="background:${color}22;border-color:${color}">km</div>`;
+  }
+  const cls = big ? 'th-day-badge-lane' : 'th-tab-badge';
+  return `<div class="${cls}" style="background:var(--plate5)11;border-color:var(--line);color:var(--muted)">off</div>`;
+}
+
+function renderTabs() {
+  const tabs = document.getElementById('thTabs');
+  tabs.innerHTML = days.map(d => `
+    <button class="th-tab ${d.key===todayKey?'th-tab-today':''}" data-active="${d.key===activeDayKey}" data-key="${d.key}">
+      ${badgeHTML(d, false)}
+      <span class="th-tab-label">${d.name.slice(0,3).toUpperCase()}</span>
+    </button>`).join('');
+  tabs.querySelectorAll('.th-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      activeDayKey = tab.getAttribute('data-key');
+      tabs.querySelectorAll('.th-tab').forEach(t => t.setAttribute('data-active', 'false'));
+      tab.setAttribute('data-active', 'true');
+      renderDay();
+    });
+  });
+}
+
+async function loadLogsForDay(day) {
+  const exList = exercisesByDay[day.key] || [];
+  const ids = exList.map(e => e.id);
+  if (ids.length === 0) return;
+  try {
+    const { data: todayLogs } = await sb.from('set_logs').select('*').eq('log_date', todayStr).in('exercise_id', ids);
+    todaySetLogs = {};
+    (todayLogs || []).forEach(l => {
+      if (!todaySetLogs[l.exercise_id]) todaySetLogs[l.exercise_id] = {};
+      todaySetLogs[l.exercise_id][l.set_number] = { weight: l.weight, reps: l.reps };
+    });
+    const { data: lastLogs } = await sb.from('set_logs').select('exercise_id, weight, log_date').in('exercise_id', ids).order('log_date', { ascending: false }).limit(200);
+    lastKnownWeight = {};
+    (lastLogs || []).forEach(l => { if (!(l.exercise_id in lastKnownWeight)) lastKnownWeight[l.exercise_id] = l.weight; });
+  } catch (e) { /* logs are a bonus feature; keep app usable even if this fails */ }
+}
+
+function renderExercise(ex) {
+  const doneForEx = todaySetLogs[ex.id] || {};
+  const dots = Array.from({ length: ex.sets || 0 }).map((_, i) => {
+    const setNum = i + 1;
+    const log = doneForEx[setNum];
+    const label = log ? `${log.weight}×${log.reps}` : (setNum);
+    return `<button class="th-dot" data-ex="${ex.id}" data-set="${setNum}" data-done="${!!log}" style="${log ? 'background:var(--green);border-color:transparent;' : ''}">${label}</button>`;
+  }).join('');
+
+  const alt = ex.alternatives || [];
+  const how = ex.howto || [];
+  const suggestion = lastKnownWeight[ex.id] ? `<div class="th-suggestion">último registro: ${lastKnownWeight[ex.id]}kg</div>` : '';
+
+  return `<div class="th-ex">
+    <div class="th-ex-name">${ex.name}</div>
+    ${ex.note ? `<div class="th-ex-note">${ex.note}</div>` : ''}
+    <div class="th-ex-row">
+      <span class="th-ex-scheme">${ex.scheme || ''}</span>
+      <div class="th-dots">${dots}</div>
+    </div>
+    ${suggestion}
+    ${ex.video_id ? `<a class="th-video-link" href="https://www.youtube.com/watch?v=${ex.video_id}" target="_blank" rel="noopener">
+      <img class="th-video-thumb" src="https://img.youtube.com/vi/${ex.video_id}/mqdefault.jpg" alt="Vídeo: ${ex.name}" loading="lazy" onerror="this.style.display='none'">
+      <span class="th-video-play">▶</span><span class="th-video-label">Assistir vídeo</span>
+    </a>` : ''}
+    <div class="th-toggle-row">
+      ${how.length ? `<button class="th-alt-toggle" data-how-toggle="${ex.id}">Como fazer ⌄</button>` : ''}
+      ${alt.length ? `<button class="th-alt-toggle" data-alt-toggle="${ex.id}">Ver alternativas ⌄</button>` : ''}
+      ${ex.diagram_svg ? `<button class="th-alt-toggle" data-diagram-toggle="${ex.id}">Ver diagrama ⌄</button>` : ''}
+    </div>
+    ${how.length ? `<ol class="th-alt-list" id="how-${ex.id}">${how.map(h=>`<li>${h}</li>`).join('')}</ol>` : ''}
+    ${alt.length ? `<ul class="th-alt-list" id="alt-${ex.id}">${alt.map(a=>`<li><a class="th-alt-link" href="https://www.youtube.com/watch?v=${a.video}" target="_blank" rel="noopener">${a.name} <span class="th-alt-play">▶</span></a></li>`).join('')}</ul>` : ''}
+    ${ex.diagram_svg ? `<div class="th-diagram" id="diagram-${ex.id}">${ex.diagram_svg}</div>` : ''}
+  </div>`;
+}
+
+function renderRunBox(day, run) {
+  const wk = runProgression[currentWeek - 1];
+  const dist = wk ? wk[run.field] : '—';
+  return `<div class="th-section-label">${run.label}</div>
+    <div class="th-run-box"><span class="th-run-num">${dist}</span><span class="th-run-unit">km · ritmo fácil</span></div>
+    <div class="th-run-desc">${run.description || ''}</div>
+    <button class="th-run-log-btn" data-log-run="${day.key}">Registrar corrida de hoje</button>
+    <div id="runLogged-${day.key}"></div>
+    ${renderWeekStepper(wk)}`;
+}
+
+function renderWeekStepper(wk) {
+  return `<div class="th-week-stepper">
+    <button class="th-step-btn" id="weekMinus">−</button>
+    <div class="th-week-label">SEMANA DA CORRIDA <b>${currentWeek}</b> / ${runProgression.length} ${wk && wk.recuo ? '<span class="th-recuo-tag">RECUO</span>' : ''}</div>
+    <button class="th-step-btn" id="weekPlus">+</button>
+  </div>`;
+}
+
+async function renderDay() {
+  const day = days.find(d => d.key === activeDayKey);
+  const exList = exercisesByDay[day.key] || [];
+  const run = runByDay[day.key];
+  const area = document.getElementById('thDayArea');
+
+  if (exList.length === 0 && !run) {
+    area.innerHTML = `<div class="th-card th-rest">
+      <div class="th-rest-title">Descanso total</div>
+      <div class="th-rest-sub">Sem treino hoje. Aproveite para dormir bem — é parte do programa.</div>
+    </div>`;
+    return;
+  }
+
+  await loadLogsForDay(day);
+
+  let html = `<div class="th-card"><div class="th-day-head">${badgeHTML(day, true)}
+    <div><div class="th-day-name">${day.name}</div><div class="th-day-focus">${day.focus}</div></div></div>`;
+
+  if (exList.length) {
+    html += `<div class="th-section-label">Força</div>`;
+    html += exList.sort((a,b)=>a.order_index-b.order_index).map(renderExercise).join('');
+  }
+  if (run) html += renderRunBox(day, run);
+
+  html += `</div>`;
+  area.innerHTML = html;
+  attachDayEvents(day);
+}
+
+function attachDayEvents(day) {
+  document.querySelectorAll('[data-how-toggle]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const id = btn.getAttribute('data-how-toggle');
+      const list = document.getElementById('how-' + id);
+      const open = list.getAttribute('data-open') === 'true';
+      list.setAttribute('data-open', open ? 'false' : 'true');
+      btn.textContent = open ? 'Como fazer ⌄' : 'Ocultar ⌃';
+    });
+  });
+  document.querySelectorAll('[data-alt-toggle]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const id = btn.getAttribute('data-alt-toggle');
+      const list = document.getElementById('alt-' + id);
+      const open = list.getAttribute('data-open') === 'true';
+      list.setAttribute('data-open', open ? 'false' : 'true');
+      btn.textContent = open ? 'Ver alternativas ⌄' : 'Ocultar alternativas ⌃';
+    });
+  });
+  document.querySelectorAll('[data-diagram-toggle]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const id = btn.getAttribute('data-diagram-toggle');
+      const box = document.getElementById('diagram-' + id);
+      const open = box.getAttribute('data-open') === 'true';
+      box.setAttribute('data-open', open ? 'false' : 'true');
+      btn.textContent = open ? 'Ver diagrama ⌄' : 'Ocultar diagrama ⌃';
+    });
+  });
+  document.querySelectorAll('.th-dot').forEach(dot => {
+    dot.addEventListener('click', async () => {
+      const exId = dot.getAttribute('data-ex');
+      const setNum = parseInt(dot.getAttribute('data-set'), 10);
+      const prevLog = (todaySetLogs[exId] || {})[setNum];
+      const suggestedWeight = prevLog ? prevLog.weight : (lastKnownWeight[exId] || '');
+      const input = prompt('Peso × reps (ex: 60x8)', suggestedWeight ? `${suggestedWeight}x` : '');
+      if (input === null) return;
+      const m = input.match(/([\d.,]+)\s*[x×]\s*(\d+)/i);
+      if (!m) { alert('Não entendi. Use o formato 60x8 (peso x repetições).'); return; }
+      const weight = parseFloat(m[1].replace(',', '.'));
+      const reps = parseInt(m[2], 10);
+      try {
+        const { error } = await sb.from('set_logs').insert({ exercise_id: exId, set_number: setNum, weight, reps, log_date: todayStr });
+        if (error) throw error;
+        setStatus(true);
+      } catch (e) { setStatus(false, 'Não consegui salvar essa série: ' + (e.message || e)); }
+      renderDay();
+    });
+  });
+
+  const runBtn = document.querySelector(`[data-log-run="${day.key}"]`);
+  if (runBtn) {
+    runBtn.addEventListener('click', async () => {
+      const wk = runProgression[currentWeek - 1];
+      const run = runByDay[day.key];
+      const suggested = wk ? wk[run.field] : '';
+      const distInput = prompt('Distância percorrida (km):', suggested || '');
+      if (distInput === null) return;
+      const durInput = prompt('Tempo (minutos):', '');
+      const rpeInput = prompt('Esforço percebido, de 1 (fácil) a 10 (máximo):', '');
+      try {
+        const { error } = await sb.from('run_logs').insert({
+          day_key: day.key, log_date: todayStr,
+          distance_km: parseFloat((distInput||'0').replace(',', '.')) || null,
+          duration_min: parseFloat((durInput||'').replace(',', '.')) || null,
+          rpe: parseInt(rpeInput, 10) || null,
+        });
+        if (error) throw error;
+        setStatus(true);
+        document.getElementById('runLogged-' + day.key).innerHTML =
+          `<div class="th-run-logged">✓ registrado: ${distInput}km${durInput ? ' em ' + durInput + 'min' : ''}${rpeInput ? ' · RPE ' + rpeInput : ''}</div>`;
+      } catch (e) { setStatus(false, 'Não consegui salvar a corrida: ' + (e.message || e)); }
+    });
+  }
+
+  const wMinus = document.getElementById('weekMinus');
+  const wPlus = document.getElementById('weekPlus');
+  if (wMinus) wMinus.addEventListener('click', () => changeWeek(-1));
+  if (wPlus) wPlus.addEventListener('click', () => changeWeek(1));
+}
+
+async function changeWeek(delta) {
+  currentWeek = Math.max(1, Math.min(runProgression.length, currentWeek + delta));
+  try {
+    const { error } = await sb.from('settings').upsert({ key: 'current_week', value: String(currentWeek) });
+    if (error) throw error;
+    setStatus(true);
+  } catch (e) { setStatus(false, 'Semana mudou aqui, mas não salvou no banco: ' + (e.message || e)); }
+  renderDay();
+}
+
+function setStatus(ok, msg) {
+  const el = document.getElementById('thStatus');
+  if (!el) return;
+  el.textContent = ok ? 'Conectado ao banco ✓' : ('⚠️ ' + (msg || 'Falha ao salvar.'));
+  el.style.color = ok ? 'var(--muted)' : 'var(--yellow)';
+}
+
+init();
+</script>
+</body>
+</html>
