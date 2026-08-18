@@ -88,6 +88,18 @@ create table if not exists public.body_measurements (
   created_at timestamptz default now()
 );
 
+create table if not exists public.skipped_days (
+  log_date date primary key default current_date,  -- 1 registro por data: pular é por dia, não por sessão
+  day_key text not null,
+  reason text,
+  created_at timestamptz default now()
+);
+
+-- índices usados pelas comparações semana-atual-vs-anterior e pela detecção de
+-- estagnação (index.html filtra/ordena set_logs e run_logs por essas colunas)
+create index if not exists idx_set_logs_exercise_date on public.set_logs (exercise_id, log_date);
+create index if not exists idx_run_logs_day_date on public.run_logs (day_key, log_date);
+
 -- ── RLS: proteção por código de acesso ──────────────────────────────────────
 --
 -- index.html envia um header "x-app-code" em toda chamada ao Supabase
@@ -118,12 +130,13 @@ alter table public.settings enable row level security;
 alter table public.set_logs enable row level security;
 alter table public.run_logs enable row level security;
 alter table public.body_measurements enable row level security;
+alter table public.skipped_days enable row level security;
 
 do $$
 declare
   t text;
 begin
-  foreach t in array array['days','exercises','run_sessions','run_progression','settings','set_logs','run_logs','body_measurements']
+  foreach t in array array['days','exercises','run_sessions','run_progression','settings','set_logs','run_logs','body_measurements','skipped_days']
   loop
     execute format('drop policy if exists %I on public.%I;', 'allow all - ' || t, t);
     execute format('drop policy if exists %I on public.%I;', 'access code - ' || t, t);

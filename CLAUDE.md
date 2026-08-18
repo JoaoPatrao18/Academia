@@ -45,6 +45,10 @@ re-renders from in-memory JS objects.
   - `run_logs` — write table for logged runs (`day_key`, `log_date`, `distance_km`, `duration_min`, `rpe`).
   - `body_measurements` — write table for body weight tracking (`date` PK, `weight_kg`,
     `waist_cm`, `arm_cm`). `date` being the PK is what makes saving idempotent per day.
+  - `skipped_days` — one row per calendar date (`log_date` PK) the user deliberately skipped,
+    with the weekday it was (`day_key`) and an optional free-text `reason`. Distinct from just
+    having no logs that day: it's shown as a neutral state (not a failure) in the weekly summary
+    dots and the streak grid, and doesn't break `computeStreak()`'s current-streak count.
 
 - Rendering flow: `init()` loads all read tables in parallel → `renderShell()` draws the day-tabs
   chrome (plus the weekly summary strip) once → `renderDay()` re-renders the active day's card
@@ -55,8 +59,15 @@ re-renders from in-memory JS objects.
   `renderDay()` rebuild the normal view when the user goes back.
 - Writes (`set_logs` upsert, `run_logs`, `body_measurements` upsert, `settings.current_week`) go
   straight to Supabase via the anon key on every user interaction — no local caching or
-  optimistic-only state; `setStatus()` surfaces a footer message if a write fails. Every write is
-  preceded by a native `confirm()` showing the value about to be saved.
+  optimistic-only state; `setStatus()` surfaces a footer message if a write fails, consistently
+  across every write path (series, runs, body measurements, week stepper, skip/unskip). Every
+  write is preceded by a native `confirm()` showing the value about to be saved.
+- The initial load (`init()`) races the Supabase calls against a 9s timeout (`withTimeout()`). A
+  timeout or a real connection error both land on `failWithRetry()`, which shows the message plus
+  a "Tentar de novo" button that re-runs `init()` from scratch — there's no infinite "Carregando…"
+  spinner if the backend is unreachable. `fail()` (no retry button) is reserved for
+  non-transient issues that a retry can't fix: missing config, or tables that connected fine but
+  are empty (needs `schema.sql`/seed data, not a network retry).
 - Edit/delete for past entries lives in three places, all following the same pattern (fetch the
   row, prompt/form pre-filled with current values, confirm, `update`/`delete` by id, re-render just
   that section): the exercise history table (`editSetLog`/`deleteSetLog`), the run log list in
@@ -68,11 +79,40 @@ re-renders from in-memory JS objects.
   to `variant_name` on the next `logSet` call for that exercise.
 - `currentWeek` drives which column of `run_progression` is shown in the run box and is persisted
   to `settings` so it survives reloads.
-- The weekly summary ("X/Y dias treinados essa semana") counts, among the weekdays that actually
-  have training scheduled (`days.badge_kind` is `plate` or `lane`), how many have at least one
-  `set_logs`/`run_logs` row dated within the current Monday–Sunday window. It's read-only and
-  best-effort (`refreshWeekSummary()` swallows its own errors so a failure there never blocks the
-  rest of the app).
+- "Pular hoje" (`loadAndRenderSkipBox()`) only renders on today's tab (`day.key === todayKey`),
+  regardless of which day is being browsed — it upserts/deletes a single `skipped_days` row keyed
+  by today's `log_date`. It's about marking today intentionally skipped, not the currently-viewed
+  day.
+- The weekly summary (`refreshWeekSummary()`) renders 7 dots (Mon–Sun) plus the "X/Y dias
+  treinados essa semana" count. Each dot's `data-state` is one of: `off` (not a training day per
+  `days.badge_kind`), `done` (has a `set_logs`/`run_logs` row that date), `skipped` (a
+  `skipped_days` row, checked after `done`), `missed` (a past training day with neither), or
+  `pending` (today/future, nothing logged yet). It's read-only and best-effort — swallows its own
+  errors so a failure there never blocks the rest of the app, same as the streak grid in Progress.
+- Weekly comparisons (exercise load and running pace/distance, "essa semana: X · semana passada:
+  Y") only render when both weeks have data; otherwise the container is left empty rather than
+  showing a misleading zero. Exercise comparison lives in `loadAndRenderHistory()` (reuses the
+  already-fetched `historyCache` rows); running comparison is `loadAndRenderRunComparison()`,
+  called whenever a day with a run box renders — not gated behind "Ver evolução".
+- Pace can be displayed as `min/km` or `km/h`; the choice is global (not per-exercise/day),
+  toggled via any "Unidade: … ⇄" button, and persisted with `getPaceUnit()`/`setPaceUnit()`
+  (`localStorage`, wrapped in `try/catch` — falls back to an in-memory variable if storage is
+  unavailable, e.g. private browsing, so the toggle still works within the session).
+- The load suggestion (`computeSuggestion()`) is prescriptive, not just informational: it looks at
+  the most recent session's rows for that exercise (`lastSessionRows`, built once per day-render
+  in `loadLogsForDay()`) and proposes last-weight + 2.5kg if every set that session met the
+  scheme's target reps (parsed from `scheme` via `parseTargetReps()`, which skips time-based
+  schemes like `3×40s`), or the same weight to repeat if not. The suggested value is both shown as
+  text on the card and pre-filled into the `logSet()` prompt.
+- Stagnation (`computeStagnation()`, feeding `stagnantExercises`) flags an exercise when its last
+  4 sessions (by best weight/reps per `log_date`, from the same `logsByEx` history pulled in
+  `loadLogsForDay()`) show no improvement across any of the 3 most recent session-to-session
+  transitions. Needs at least 4 distinct session dates in history; otherwise it's silently skipped
+  (not enough data, not "no progress").
+- The run week-advance/repeat nudge (`loadAndRenderRunSuggestion()`) looks only at the current
+  day's last 2 `run_logs` rows by RPE: both ≤4 suggests advancing `currentWeek` (button calls
+  `changeWeek(1)`, a real write); both ≥8 suggests staying (button just clears the message locally
+  — there's nothing to persist since the week isn't changing). Mixed RPEs show nothing.
 
 ## Security: access-code gate on RLS
 
