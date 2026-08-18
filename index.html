@@ -9,6 +9,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#1B1B1D">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap');
 
@@ -113,6 +114,60 @@ html, body {
 
 .th-hint { font-size: 11px; color: var(--muted); text-align: center; margin-top: 16px; line-height: 1.5; }
 .th-loading { text-align: center; padding: 60px 10px; color: var(--muted); font-family: var(--font-mono); font-size: 13px; }
+
+/* nav / progress link */
+.th-nav-row { display: flex; gap: 8px; margin-bottom: 14px; }
+.th-nav-btn { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; cursor: pointer; flex: 1; }
+.th-live-btn { width: 100%; margin-top: 14px; padding: 12px; border-radius: 8px; border: 1px solid var(--red); background: transparent; color: var(--red); font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; cursor: pointer; }
+.th-back-btn { font-family: var(--font-mono); font-size: 11px; color: var(--muted); background: none; border: none; padding: 0; margin-bottom: 14px; cursor: pointer; text-transform: uppercase; letter-spacing: 0.05em; }
+
+/* history / chart */
+.th-history { margin-top: 8px; display: none; }
+.th-history[data-open="true"] { display: block; }
+.th-history-empty { font-size: 12px; color: var(--muted); padding: 8px 0; }
+.th-history-table { width: 100%; border-collapse: collapse; font-family: var(--font-mono); font-size: 11px; margin-bottom: 10px; }
+.th-history-table th { text-align: left; color: var(--muted); font-weight: 500; padding: 4px 6px; border-bottom: 1px solid var(--line); text-transform: uppercase; letter-spacing: 0.04em; font-size: 10px; }
+.th-history-table td { padding: 4px 6px; border-bottom: 1px solid var(--line); color: var(--chalk); }
+.th-history canvas { max-height: 160px; }
+
+/* toast (recorde pessoal) */
+.th-toast { position: fixed; left: 50%; bottom: -80px; transform: translateX(-50%); background: var(--yellow); color: var(--bg); font-family: var(--font-mono); font-weight: 600; font-size: 13px; padding: 12px 18px; border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,0.4); transition: bottom 0.25s ease; z-index: 200; white-space: nowrap; }
+.th-toast.show { bottom: 24px; }
+
+/* live workout mode */
+.th-live-overlay { display: none; position: fixed; inset: 0; background: var(--bg); z-index: 100; flex-direction: column; padding: 20px 18px; }
+.th-live-overlay[data-open="true"] { display: flex; }
+.th-live-close { align-self: flex-end; background: none; border: 1px solid var(--line); color: var(--chalk); border-radius: 50%; width: 36px; height: 36px; font-size: 16px; cursor: pointer; }
+#liveContent { flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; gap: 10px; }
+.th-live-counter { font-family: var(--font-mono); font-size: 12px; color: var(--muted); letter-spacing: 0.08em; text-transform: uppercase; }
+.th-live-name { font-family: var(--font-display); font-weight: 700; font-size: 30px; text-transform: uppercase; line-height: 1.1; }
+.th-live-scheme { font-family: var(--font-mono); font-size: 16px; color: var(--muted); }
+.th-live-dots { justify-content: center; margin-top: 14px; }
+.th-live-dots .th-dot { min-width: 44px; height: 44px; font-size: 13px; }
+.th-live-nav { display: flex; gap: 12px; margin-top: 20px; }
+.th-live-nav-btn { flex: 1; padding: 14px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface-2); color: var(--chalk); font-family: var(--font-mono); font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em; cursor: pointer; }
+.th-live-nav-btn:disabled { opacity: 0.35; }
+
+/* streak grid */
+.th-streak-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 10px; }
+.th-streak-count { font-family: var(--font-mono); font-size: 13px; color: var(--chalk); }
+.th-streak-count b { color: var(--green); font-size: 18px; }
+.th-streak-grid { display: grid; grid-template-rows: repeat(7, 1fr); grid-auto-flow: column; gap: 3px; overflow-x: auto; padding-bottom: 4px; }
+.th-streak-cell { width: 11px; height: 11px; border-radius: 2px; background: var(--surface-2); }
+.th-streak-cell[data-level="1"] { background: #2E5B3B; }
+.th-streak-cell[data-level="2"] { background: #3A8250; }
+.th-streak-cell[data-level="3"] { background: var(--green); }
+
+/* body measurements */
+.th-body-form { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+.th-body-form input { background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px; padding: 10px; color: var(--chalk); font-family: var(--font-mono); font-size: 13px; width: 100%; }
+.th-body-form input[type="date"] { grid-column: 1 / -1; }
+.th-body-form button { grid-column: 1 / -1; padding: 12px; border-radius: 8px; border: none; background: var(--blue); color: #fff; font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; cursor: pointer; }
+.th-body-list { margin-top: 12px; font-family: var(--font-mono); font-size: 12px; color: var(--muted); }
+.th-body-list-row { display: flex; justify-content: space-between; padding: 5px 0; border-top: 1px solid var(--line); }
+.th-body-list-row b { color: var(--chalk); }
+
+.th-pr-tag { display: inline-block; margin-left: 6px; font-size: 10px; color: var(--yellow); font-family: var(--font-mono); }
 </style>
 </head>
 <body>
@@ -145,7 +200,23 @@ let todaySetLogs = {};     // exercise_id -> { setNumber: {weight,reps} }
 let lastKnownWeight = {};  // exercise_id -> weight (most recent ever)
 let connectionOk = false;
 
+let currentView = 'day';   // 'day' | 'progress'
+let historyOpen = {};      // exercise_id -> bool
+let historyCache = {};     // exercise_id -> set_logs[]
+let exCharts = {};         // exercise_id -> Chart instance
+let runChartOpen = {};     // day_key -> bool
+let runCharts = {};        // day_key -> Chart instance
+let bmChart = null;
+let toastTimer = null;
+
+let liveList = [];
+let liveIndex = 0;
+let liveOpen = false;
+
 const root = document.getElementById('root');
+
+function themeColor(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+function formatDate(iso) { const [y,m,d] = iso.split('-'); return `${d}/${m}/${y.slice(2)}`; }
 
 function fail(msg) {
   root.innerHTML = `<div class="th-loading" style="color:var(--yellow)">⚠️ ${msg}</div>`;
@@ -206,11 +277,56 @@ function renderShell() {
     <div class="th-eyebrow">João · Treino Híbrido</div>
     <div class="th-title">Qual série hoje?</div>
     <div class="th-legend">Número na anilha = intensidade do dia. Toque numa série pra registrar peso × reps.</div>
+    <div class="th-nav-row">
+      <button class="th-nav-btn" id="navProgress">📈 Ver progresso</button>
+    </div>
     <div class="th-tabs" id="thTabs"></div>
     <div id="thDayArea"></div>
     <div class="th-hint" id="thStatus">Conectado ao banco ✓</div>
   `;
   renderTabs();
+  document.getElementById('navProgress').addEventListener('click', () => {
+    currentView = 'progress';
+    renderProgressView();
+  });
+  ensureLiveOverlay();
+  ensureToast();
+}
+
+function ensureToast() {
+  if (document.getElementById('thToast')) return;
+  const el = document.createElement('div');
+  el.className = 'th-toast';
+  el.id = 'thToast';
+  document.body.appendChild(el);
+}
+
+function showToast(msg) {
+  ensureToast();
+  const toast = document.getElementById('thToast');
+  toast.textContent = msg;
+  toast.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toast.classList.remove('show'), 4000);
+}
+
+function ensureLiveOverlay() {
+  if (document.getElementById('liveOverlay')) return;
+  const el = document.createElement('div');
+  el.className = 'th-live-overlay';
+  el.id = 'liveOverlay';
+  el.innerHTML = `
+    <button class="th-live-close" id="liveClose">✕</button>
+    <div id="liveContent"></div>
+    <div class="th-live-nav">
+      <button class="th-live-nav-btn" id="livePrev">‹ Anterior</button>
+      <button class="th-live-nav-btn" id="liveNext">Próximo ›</button>
+    </div>
+  `;
+  document.body.appendChild(el);
+  document.getElementById('liveClose').addEventListener('click', closeLiveMode);
+  document.getElementById('livePrev').addEventListener('click', () => { if (liveIndex > 0) { liveIndex--; renderLive(); } });
+  document.getElementById('liveNext').addEventListener('click', () => { if (liveIndex < liveList.length - 1) { liveIndex++; renderLive(); } });
 }
 
 function badgeHTML(day, big) {
@@ -290,10 +406,12 @@ function renderExercise(ex) {
       ${how.length ? `<button class="th-alt-toggle" data-how-toggle="${ex.id}">Como fazer ⌄</button>` : ''}
       ${alt.length ? `<button class="th-alt-toggle" data-alt-toggle="${ex.id}">Ver alternativas ⌄</button>` : ''}
       ${ex.diagram_svg ? `<button class="th-alt-toggle" data-diagram-toggle="${ex.id}">Ver diagrama ⌄</button>` : ''}
+      <button class="th-alt-toggle" data-history-toggle="${ex.id}">${historyOpen[ex.id] ? 'Ocultar histórico ⌃' : 'Ver histórico ⌄'}</button>
     </div>
     ${how.length ? `<ol class="th-alt-list" id="how-${ex.id}">${how.map(h=>`<li>${h}</li>`).join('')}</ol>` : ''}
     ${alt.length ? `<ul class="th-alt-list" id="alt-${ex.id}">${alt.map(a=>`<li><a class="th-alt-link" href="https://www.youtube.com/watch?v=${a.video}" target="_blank" rel="noopener">${a.name} <span class="th-alt-play">▶</span></a></li>`).join('')}</ul>` : ''}
     ${ex.diagram_svg ? `<div class="th-diagram" id="diagram-${ex.id}">${ex.diagram_svg}</div>` : ''}
+    <div class="th-history" id="history-${ex.id}" data-open="${historyOpen[ex.id] ? 'true' : 'false'}"><canvas id="histChart-${ex.id}" height="140"></canvas><div id="histTable-${ex.id}"></div></div>
   </div>`;
 }
 
@@ -305,6 +423,10 @@ function renderRunBox(day, run) {
     <div class="th-run-desc">${run.description || ''}</div>
     <button class="th-run-log-btn" data-log-run="${day.key}">Registrar corrida de hoje</button>
     <div id="runLogged-${day.key}"></div>
+    <div class="th-toggle-row" style="margin-top:10px">
+      <button class="th-alt-toggle" data-runchart-toggle="${day.key}">${runChartOpen[day.key] ? 'Ocultar evolução ⌃' : 'Ver evolução ⌄'}</button>
+    </div>
+    <div class="th-history" id="runchart-${day.key}" data-open="${runChartOpen[day.key] ? 'true' : 'false'}"><canvas id="runChartCanvas-${day.key}" height="160"></canvas><div id="runChartMsg-${day.key}"></div></div>
     ${renderWeekStepper(wk)}`;
 }
 
@@ -338,6 +460,7 @@ async function renderDay() {
   if (exList.length) {
     html += `<div class="th-section-label">Força</div>`;
     html += exList.sort((a,b)=>a.order_index-b.order_index).map(renderExercise).join('');
+    html += `<button class="th-live-btn" id="liveStartBtn">🏋️ Modo treino ao vivo</button>`;
   }
   if (run) html += renderRunBox(day, run);
 
@@ -375,24 +498,41 @@ function attachDayEvents(day) {
     });
   });
   document.querySelectorAll('.th-dot').forEach(dot => {
-    dot.addEventListener('click', async () => {
-      const exId = dot.getAttribute('data-ex');
-      const setNum = parseInt(dot.getAttribute('data-set'), 10);
-      const prevLog = (todaySetLogs[exId] || {})[setNum];
-      const suggestedWeight = prevLog ? prevLog.weight : (lastKnownWeight[exId] || '');
-      const input = prompt('Peso × reps (ex: 60x8)', suggestedWeight ? `${suggestedWeight}x` : '');
-      if (input === null) return;
-      const m = input.match(/([\d.,]+)\s*[x×]\s*(\d+)/i);
-      if (!m) { alert('Não entendi. Use o formato 60x8 (peso x repetições).'); return; }
-      const weight = parseFloat(m[1].replace(',', '.'));
-      const reps = parseInt(m[2], 10);
-      try {
-        const { error } = await sb.from('set_logs').insert({ exercise_id: exId, set_number: setNum, weight, reps, log_date: todayStr });
-        if (error) throw error;
-        setStatus(true);
-      } catch (e) { setStatus(false, 'Não consegui salvar essa série: ' + (e.message || e)); }
-      renderDay();
+    dot.addEventListener('click', () => logSet(dot.getAttribute('data-ex'), parseInt(dot.getAttribute('data-set'), 10)));
+  });
+
+  document.querySelectorAll('[data-history-toggle]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const id = btn.getAttribute('data-history-toggle');
+      const open = historyOpen[id];
+      historyOpen[id] = !open;
+      btn.textContent = open ? 'Ver histórico ⌄' : 'Ocultar histórico ⌃';
+      const box = document.getElementById('history-' + id);
+      box.setAttribute('data-open', historyOpen[id] ? 'true' : 'false');
+      if (historyOpen[id]) loadAndRenderHistory(id);
     });
+  });
+
+  document.querySelectorAll('[data-runchart-toggle]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const key = btn.getAttribute('data-runchart-toggle');
+      const open = runChartOpen[key];
+      runChartOpen[key] = !open;
+      btn.textContent = open ? 'Ver evolução ⌄' : 'Ocultar evolução ⌃';
+      const box = document.getElementById('runchart-' + key);
+      box.setAttribute('data-open', runChartOpen[key] ? 'true' : 'false');
+      if (runChartOpen[key]) loadAndRenderRunChart(key);
+    });
+  });
+
+  const liveStartBtn = document.getElementById('liveStartBtn');
+  if (liveStartBtn) liveStartBtn.addEventListener('click', () => openLiveMode(day));
+
+  document.querySelectorAll('.th-history[data-open="true"]').forEach(box => {
+    const exId = box.id.startsWith('history-') ? box.id.slice(8) : null;
+    if (exId) loadAndRenderHistory(exId);
+    const dayKey = box.id.startsWith('runchart-') ? box.id.slice(9) : null;
+    if (dayKey) loadAndRenderRunChart(dayKey);
   });
 
   const runBtn = document.querySelector(`[data-log-run="${day.key}"]`);
@@ -441,6 +581,344 @@ function setStatus(ok, msg) {
   if (!el) return;
   el.textContent = ok ? 'Conectado ao banco ✓' : ('⚠️ ' + (msg || 'Falha ao salvar.'));
   el.style.color = ok ? 'var(--muted)' : 'var(--yellow)';
+}
+
+// ============================================================
+// Registro de série + recorde pessoal
+// ============================================================
+async function logSet(exId, setNum) {
+  const prevLog = (todaySetLogs[exId] || {})[setNum];
+  const suggestedWeight = prevLog ? prevLog.weight : (lastKnownWeight[exId] || '');
+  const input = prompt('Peso × reps (ex: 60x8)', suggestedWeight ? `${suggestedWeight}x` : '');
+  if (input === null) return;
+  const m = input.match(/([\d.,]+)\s*[x×]\s*(\d+)/i);
+  if (!m) { alert('Não entendi. Use o formato 60x8 (peso x repetições).'); return; }
+  const weight = parseFloat(m[1].replace(',', '.'));
+  const reps = parseInt(m[2], 10);
+
+  let isRecord = false;
+  try {
+    const { data: bestRows } = await sb.from('set_logs').select('weight').eq('exercise_id', exId).gte('reps', reps).order('weight', { ascending: false }).limit(1);
+    const bestWeight = bestRows && bestRows[0] ? Number(bestRows[0].weight) : null;
+    isRecord = bestWeight === null || weight > bestWeight;
+  } catch (e) { /* PR check is a bonus; ignore failures */ }
+
+  try {
+    const { error } = await sb.from('set_logs').insert({ exercise_id: exId, set_number: setNum, weight, reps, log_date: todayStr });
+    if (error) throw error;
+    setStatus(true);
+    if (isRecord) {
+      const ex = (exercisesByDay[activeDayKey] || []).find(e => String(e.id) === String(exId));
+      showToast(`🏆 novo recorde! ${ex ? ex.name + ' — ' : ''}${weight}kg × ${reps}`);
+    }
+    delete historyCache[exId];
+  } catch (e) { setStatus(false, 'Não consegui salvar essa série: ' + (e.message || e)); }
+
+  await renderDay();
+  if (liveOpen) renderLive();
+}
+
+// ============================================================
+// Histórico + gráfico de evolução por exercício
+// ============================================================
+async function loadAndRenderHistory(exId) {
+  const tableEl = document.getElementById('histTable-' + exId);
+  const canvasEl = document.getElementById('histChart-' + exId);
+  if (!tableEl || !canvasEl) return;
+  try {
+    if (!historyCache[exId]) {
+      const { data, error } = await sb.from('set_logs').select('*').eq('exercise_id', exId).order('log_date', { ascending: false }).order('set_number', { ascending: true });
+      if (error) throw error;
+      historyCache[exId] = data || [];
+    }
+    const logs = historyCache[exId];
+    if (!logs.length) {
+      tableEl.innerHTML = '<div class="th-history-empty">Ainda sem histórico registrado.</div>';
+      canvasEl.style.display = 'none';
+      return;
+    }
+    canvasEl.style.display = 'block';
+    tableEl.innerHTML = `<table class="th-history-table"><thead><tr><th>Data</th><th>Série</th><th>Peso</th><th>Reps</th></tr></thead><tbody>
+      ${logs.map(l => `<tr><td>${formatDate(l.log_date)}</td><td>${l.set_number}</td><td>${l.weight != null ? l.weight + 'kg' : '—'}</td><td>${l.reps != null ? l.reps : '—'}</td></tr>`).join('')}
+    </tbody></table>`;
+
+    const byDate = {};
+    logs.forEach(l => {
+      if (l.weight == null) return;
+      if (!(l.log_date in byDate) || l.weight > byDate[l.log_date]) byDate[l.log_date] = Number(l.weight);
+    });
+    const dates = Object.keys(byDate).sort();
+
+    if (exCharts[exId]) exCharts[exId].destroy();
+    exCharts[exId] = new Chart(canvasEl.getContext('2d'), {
+      type: 'line',
+      data: {
+        labels: dates.map(formatDate),
+        datasets: [{
+          label: 'Peso máx (kg)',
+          data: dates.map(d => byDate[d]),
+          borderColor: themeColor('--yellow'),
+          backgroundColor: themeColor('--yellow'),
+          tension: 0.25,
+          pointRadius: 3,
+        }],
+      },
+      options: {
+        responsive: true,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { color: themeColor('--muted'), font: { size: 10 } }, grid: { color: themeColor('--line') } },
+          y: { ticks: { color: themeColor('--muted'), font: { size: 10 } }, grid: { color: themeColor('--line') } },
+        },
+      },
+    });
+  } catch (e) {
+    tableEl.innerHTML = `<div class="th-history-empty">Não consegui carregar o histórico: ${e.message || e}</div>`;
+  }
+}
+
+// ============================================================
+// Gráfico de progressão da corrida
+// ============================================================
+async function loadAndRenderRunChart(dayKey) {
+  const canvasEl = document.getElementById('runChartCanvas-' + dayKey);
+  const msgEl = document.getElementById('runChartMsg-' + dayKey);
+  if (!canvasEl) return;
+  try {
+    const { data, error } = await sb.from('run_logs').select('*').eq('day_key', dayKey).order('log_date', { ascending: true });
+    if (error) throw error;
+    const logs = (data || []).filter(l => l.distance_km != null);
+    if (!logs.length) {
+      canvasEl.style.display = 'none';
+      if (msgEl) msgEl.innerHTML = '<div class="th-history-empty">Ainda sem corridas registradas.</div>';
+      return;
+    }
+    canvasEl.style.display = 'block';
+    if (msgEl) msgEl.innerHTML = '';
+    const pace = l => (l.duration_min && l.distance_km) ? +(l.duration_min / l.distance_km).toFixed(2) : null;
+    if (runCharts[dayKey]) runCharts[dayKey].destroy();
+    runCharts[dayKey] = new Chart(canvasEl.getContext('2d'), {
+      type: 'line',
+      data: {
+        labels: logs.map(l => formatDate(l.log_date)),
+        datasets: [
+          { label: 'Distância (km)', data: logs.map(l => l.distance_km), borderColor: themeColor('--blue'), backgroundColor: themeColor('--blue'), yAxisID: 'y', tension: 0.25, pointRadius: 3 },
+          { label: 'Pace (min/km)', data: logs.map(pace), borderColor: themeColor('--red'), backgroundColor: themeColor('--red'), yAxisID: 'y1', tension: 0.25, pointRadius: 3 },
+        ],
+      },
+      options: {
+        responsive: true,
+        plugins: { legend: { labels: { color: themeColor('--chalk'), font: { size: 10 } } } },
+        scales: {
+          x: { ticks: { color: themeColor('--muted'), font: { size: 10 } }, grid: { color: themeColor('--line') } },
+          y: { position: 'left', ticks: { color: themeColor('--muted'), font: { size: 10 } }, grid: { color: themeColor('--line') } },
+          y1: { position: 'right', ticks: { color: themeColor('--muted'), font: { size: 10 } }, grid: { display: false } },
+        },
+      },
+    });
+  } catch (e) {
+    setStatus(false, 'Não consegui carregar a evolução da corrida: ' + (e.message || e));
+  }
+}
+
+// ============================================================
+// Modo treino ao vivo
+// ============================================================
+function openLiveMode(day) {
+  liveList = (exercisesByDay[day.key] || []).slice().sort((a, b) => a.order_index - b.order_index);
+  if (!liveList.length) return;
+  liveIndex = 0;
+  liveOpen = true;
+  ensureLiveOverlay();
+  renderLive();
+  document.getElementById('liveOverlay').setAttribute('data-open', 'true');
+}
+
+function closeLiveMode() {
+  liveOpen = false;
+  const overlay = document.getElementById('liveOverlay');
+  if (overlay) overlay.setAttribute('data-open', 'false');
+}
+
+function renderLive() {
+  const ex = liveList[liveIndex];
+  const content = document.getElementById('liveContent');
+  if (!content || !ex) return;
+  const doneForEx = todaySetLogs[ex.id] || {};
+  const dots = Array.from({ length: ex.sets || 0 }).map((_, i) => {
+    const setNum = i + 1;
+    const log = doneForEx[setNum];
+    const label = log ? `${log.weight}×${log.reps}` : setNum;
+    return `<button class="th-dot" data-live-ex="${ex.id}" data-live-set="${setNum}" data-done="${!!log}" style="${log ? 'background:var(--green);border-color:transparent;' : ''}">${label}</button>`;
+  }).join('');
+
+  content.innerHTML = `
+    <div class="th-live-counter">Exercício ${liveIndex + 1} / ${liveList.length}</div>
+    <div class="th-live-name">${ex.name}</div>
+    <div class="th-live-scheme">${ex.scheme || ''}</div>
+    <div class="th-dots th-live-dots">${dots}</div>
+    ${ex.note ? `<div class="th-ex-note">${ex.note}</div>` : ''}
+  `;
+  content.querySelectorAll('[data-live-ex]').forEach(dot => {
+    dot.addEventListener('click', () => logSet(dot.getAttribute('data-live-ex'), parseInt(dot.getAttribute('data-live-set'), 10)));
+  });
+  document.getElementById('livePrev').disabled = liveIndex === 0;
+  document.getElementById('liveNext').disabled = liveIndex === liveList.length - 1;
+}
+
+// ============================================================
+// Tela de progresso: streak + peso corporal
+// ============================================================
+async function renderProgressView() {
+  root.innerHTML = `
+    <div class="th-eyebrow">João · Treino Híbrido</div>
+    <div class="th-title">Progresso</div>
+    <button class="th-back-btn" id="backToDay">← Voltar ao treino</button>
+    <div class="th-card" id="streakCard"><div class="th-loading">Carregando…</div></div>
+    <div class="th-card" id="bodyCard"><div class="th-loading">Carregando…</div></div>
+    <div class="th-hint" id="thStatus">Conectado ao banco ✓</div>
+  `;
+  document.getElementById('backToDay').addEventListener('click', () => {
+    currentView = 'day';
+    renderShell();
+    renderDay();
+  });
+  await renderStreak();
+  await renderBodySection();
+}
+
+async function renderStreak() {
+  const card = document.getElementById('streakCard');
+  try {
+    const [{ data: setDates, error: e1 }, { data: runDates, error: e2 }] = await Promise.all([
+      sb.from('set_logs').select('log_date'),
+      sb.from('run_logs').select('log_date'),
+    ]);
+    if (e1) throw e1;
+    if (e2) throw e2;
+    const countMap = {};
+    [...(setDates || []), ...(runDates || [])].forEach(r => {
+      if (!r.log_date) return;
+      countMap[r.log_date] = (countMap[r.log_date] || 0) + 1;
+    });
+    const streak = computeStreak(countMap);
+    card.innerHTML = `
+      <div class="th-streak-head">
+        <div class="th-section-label" style="margin:0">Dias treinados</div>
+        <div class="th-streak-count"><b>${streak}</b> ${streak === 1 ? 'dia seguido' : 'dias seguidos'}</div>
+      </div>
+      ${renderStreakGrid(countMap)}
+    `;
+  } catch (e) {
+    card.innerHTML = `<div class="th-history-empty">Não consegui carregar o histórico de treinos: ${e.message || e}</div>`;
+  }
+}
+
+function computeStreak(countMap) {
+  let streak = 0;
+  let cursor = new Date(todayStr + 'T12:00:00');
+  if (!countMap[todayStr]) cursor.setDate(cursor.getDate() - 1);
+  while (true) {
+    const key = cursor.toISOString().slice(0, 10);
+    if (countMap[key]) { streak++; cursor.setDate(cursor.getDate() - 1); } else break;
+  }
+  return streak;
+}
+
+function renderStreakGrid(countMap) {
+  const totalDays = 112;
+  const start = new Date(todayStr + 'T12:00:00');
+  start.setDate(start.getDate() - (totalDays - 1));
+  const cells = [];
+  for (let i = 0; i < totalDays; i++) {
+    const d = new Date(start);
+    d.setDate(start.getDate() + i);
+    const key = d.toISOString().slice(0, 10);
+    const c = countMap[key] || 0;
+    const level = c === 0 ? 0 : c === 1 ? 1 : c === 2 ? 2 : 3;
+    cells.push(`<div class="th-streak-cell" data-level="${level}" title="${formatDate(key)}: ${c} registro(s)"></div>`);
+  }
+  return `<div class="th-streak-grid">${cells.join('')}</div>`;
+}
+
+async function renderBodySection() {
+  const card = document.getElementById('bodyCard');
+  card.innerHTML = `
+    <div class="th-section-label" style="margin-top:0">Peso corporal</div>
+    <div class="th-body-form">
+      <input type="date" id="bmDate" value="${todayStr}">
+      <input type="number" step="0.1" id="bmWeight" placeholder="Peso (kg)">
+      <input type="number" step="0.1" id="bmWaist" placeholder="Cintura (cm) opcional">
+      <input type="number" step="0.1" id="bmArm" placeholder="Braço (cm) opcional">
+      <button id="bmSave">Salvar</button>
+    </div>
+    <canvas id="bmChart" height="160"></canvas>
+    <div class="th-body-list" id="bmList"></div>
+  `;
+  document.getElementById('bmSave').addEventListener('click', saveBodyMeasurement);
+  await loadAndRenderBodyMeasurements();
+}
+
+async function saveBodyMeasurement() {
+  const date = document.getElementById('bmDate').value || todayStr;
+  const weight = parseFloat((document.getElementById('bmWeight').value || '').replace(',', '.'));
+  const waist = parseFloat((document.getElementById('bmWaist').value || '').replace(',', '.'));
+  const arm = parseFloat((document.getElementById('bmArm').value || '').replace(',', '.'));
+  if (!weight) { alert('Informe o peso (kg).'); return; }
+  try {
+    const { error } = await sb.from('body_measurements').upsert({
+      date, weight_kg: weight,
+      waist_cm: isNaN(waist) ? null : waist,
+      arm_cm: isNaN(arm) ? null : arm,
+    });
+    if (error) throw error;
+    setStatus(true);
+    await loadAndRenderBodyMeasurements();
+  } catch (e) { setStatus(false, 'Não consegui salvar a medida: ' + (e.message || e)); }
+}
+
+async function loadAndRenderBodyMeasurements() {
+  const listEl = document.getElementById('bmList');
+  const canvasEl = document.getElementById('bmChart');
+  try {
+    const { data, error } = await sb.from('body_measurements').select('*').order('date', { ascending: true });
+    if (error) throw error;
+    const rows = data || [];
+    if (!rows.length) {
+      listEl.innerHTML = '<div class="th-history-empty">Ainda sem registros de peso.</div>';
+      canvasEl.style.display = 'none';
+      return;
+    }
+    canvasEl.style.display = 'block';
+    if (bmChart) bmChart.destroy();
+    bmChart = new Chart(canvasEl.getContext('2d'), {
+      type: 'line',
+      data: {
+        labels: rows.map(r => formatDate(r.date)),
+        datasets: [{
+          label: 'Peso (kg)',
+          data: rows.map(r => r.weight_kg),
+          borderColor: themeColor('--green'),
+          backgroundColor: themeColor('--green'),
+          tension: 0.25,
+          pointRadius: 3,
+        }],
+      },
+      options: {
+        responsive: true,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { color: themeColor('--muted'), font: { size: 10 } }, grid: { color: themeColor('--line') } },
+          y: { ticks: { color: themeColor('--muted'), font: { size: 10 } }, grid: { color: themeColor('--line') } },
+        },
+      },
+    });
+    listEl.innerHTML = rows.slice(-10).reverse().map(r =>
+      `<div class="th-body-list-row"><span>${formatDate(r.date)}</span><b>${r.weight_kg}kg</b>${r.waist_cm ? ` · cintura ${r.waist_cm}cm` : ''}${r.arm_cm ? ` · braço ${r.arm_cm}cm` : ''}</div>`
+    ).join('');
+  } catch (e) {
+    listEl.innerHTML = `<div class="th-history-empty">Não consegui carregar o histórico de peso: ${e.message || e}</div>`;
+  }
 }
 
 init();
