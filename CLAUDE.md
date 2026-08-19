@@ -32,17 +32,23 @@ re-renders from in-memory JS objects.
   - `exercises` — strength exercises per `day_key`, including `sets`, `scheme`, `alternatives`
     (JSON array of `{name, video}`), `howto` (JSON array of strings), `diagram_svg` (raw SVG
     markup), `video_id` (YouTube).
-  - `run_sessions` — one running workout per `day_key` (`label`, `field`, `description`).
+  - `run_sessions` — one running workout per `day_key` (`label`, `field`, `description`,
+    `pace_tip`). `pace_tip` is the static text for the "Como calibrar o ritmo" panel — free text,
+    editable straight in the Table Editor; see the pace-tip bullet below for how it's assembled
+    with the calculated heart-rate line.
   - `run_progression` — week-by-week target distances, one row per training week, keyed by
     `week` with per-session-type columns referenced via `run_sessions.field`.
-  - `settings` — key/value store; currently only holds `current_week`.
+  - `settings` — key/value store. Known keys: `current_week` (running progression week) and
+    `user_age` (age in years, used to calculate the heart-rate target zone — see below).
   - `set_logs` — write table for logged sets (`exercise_id`, `set_number`, `weight`, `reps`,
     `log_date`, `variant_name`). Unique on `(exercise_id, set_number, log_date)` — the client
     always `upsert`s on this key, so re-logging the same set on the same day updates the row
     instead of creating a duplicate. `variant_name` holds the alternative exercise name when the
     user logged an alternative instead of the main lift (see `selectedVariant` below); null means
     "did the main exercise."
-  - `run_logs` — write table for logged runs (`day_key`, `log_date`, `distance_km`, `duration_min`, `rpe`).
+  - `run_logs` — write table for logged runs (`day_key`, `log_date`, `distance_km`,
+    `duration_min`, `rpe`, `avg_heart_rate`). `avg_heart_rate` (bpm) is optional — filled only if
+    the user has a watch — and drives the post-run heart-rate feedback (see below).
   - `body_measurements` — write table for body weight tracking (`date` PK, `weight_kg`,
     `waist_cm`, `arm_cm`). `date` being the PK is what makes saving idempotent per day.
   - `skipped_days` — one row per calendar date (`log_date` PK) the user deliberately skipped,
@@ -113,6 +119,22 @@ re-renders from in-memory JS objects.
   day's last 2 `run_logs` rows by RPE: both ≤4 suggests advancing `currentWeek` (button calls
   `changeWeek(1)`, a real write); both ≥8 suggests staying (button just clears the message locally
   — there's nothing to persist since the week isn't changing). Mixed RPEs show nothing.
+- Heart-rate target zone (`computeHRZone()`) is estimated-max-based: `220 - userAge`, zone =
+  60–70% of that. `userAge` is loaded once in `init()` from `settings.user_age` (same pattern as
+  `currentWeek`) and updated in memory by `saveUserAge()` on the Progress screen — no reload
+  needed for it to take effect elsewhere. Without an age saved, `hrZoneLine()` falls back to the
+  generic "60–70% da FC máxima estimada — fórmula: 220 − idade" text plus a prompt to fill it in.
+- The "Como calibrar o ritmo" panel (`renderPaceTipLines()`) splits `run_sessions.pace_tip` on
+  newlines and splices the calculated (or fallback) heart-rate line in as the 3rd bullet — between
+  the "conversation test" and "don't watch the clock" lines. This assumes `pace_tip` has at least
+  2 lines; if edited down to fewer, the HR line just gets appended at the end instead of spliced
+  in the middle.
+- The post-run heart-rate feedback (`computeHRFeedback()`) only renders when *both* `avg_heart_rate`
+  (from the just-submitted log) and `userAge` are present — otherwise it's silently omitted, no
+  error. It compares the logged bpm against `computeHRZone()`: above → "went out too fast" warning
+  (yellow), below → reassurance that erring slow is fine (muted), inside → "well calibrated"
+  (green). Shown once, inline with the "✓ registrado" confirmation after logging a run; not
+  recomputed retroactively for past logs.
 
 ## Security: access-code gate on RLS
 

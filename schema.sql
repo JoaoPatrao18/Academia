@@ -39,7 +39,8 @@ create table if not exists public.run_sessions (
   day_key text not null references public.days(key),
   field text not null,            -- coluna correspondente em run_progression (curta/media/longa)
   label text not null,
-  description text
+  description text,
+  pace_tip text                   -- texto estático do painel "Como calibrar o ritmo" (editável no Table Editor)
 );
 
 create table if not exists public.run_progression (
@@ -54,6 +55,8 @@ create table if not exists public.settings (
   key text primary key,
   value text
 );
+-- chaves conhecidas: 'current_week' (semana da progressão de corrida),
+-- 'user_age' (idade em anos, usada pra calcular a zona de FC alvo)
 
 -- ── Tabelas de registro (histórico do usuário) ──────────────────────────────
 
@@ -77,6 +80,7 @@ create table if not exists public.run_logs (
   distance_km numeric,
   duration_min numeric,
   rpe integer,
+  avg_heart_rate integer,         -- FC média opcional (bpm), usada no feedback pós-corrida
   notes text
 );
 
@@ -99,6 +103,15 @@ create table if not exists public.skipped_days (
 -- estagnação (index.html filtra/ordena set_logs e run_logs por essas colunas)
 create index if not exists idx_set_logs_exercise_date on public.set_logs (exercise_id, log_date);
 create index if not exists idx_run_logs_day_date on public.run_logs (day_key, log_date);
+
+-- Texto padrão do painel "Como calibrar o ritmo" — index.html insere a linha de
+-- zona de FC calculada entre a 2ª e a 3ª linha deste texto (ver
+-- renderPaceTipLines() em index.html). Editável depois pelo Table Editor.
+update public.run_sessions
+set pace_tip = 'Teste da conversa: você deve conseguir falar frases completas correndo, sem ficar ofegante. Se não consegue completar uma frase, está rápido demais. É mais seguro errar para o lado devagar do que para o lado rápido, principalmente construindo base.
+Referência de pace pra começar (só ponto de partida, não meta): entre 6:00 e 7:30 min/km — mais lento do que a maioria espera na primeira vez.
+Nas primeiras semanas, não presta atenção no relógio pra ritmo — só corre no ritmo de conversa e deixa tempo/distância caírem onde caírem.'
+where pace_tip is null;
 
 -- ── RLS: proteção por código de acesso ──────────────────────────────────────
 --

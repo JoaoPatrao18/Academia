@@ -212,6 +212,17 @@ html, body {
 /* skip day */
 .th-skip-btn { font-family: var(--font-mono); font-size: 11px; color: var(--muted); background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; cursor: pointer; margin-bottom: 12px; }
 .th-skip-note { font-family: var(--font-mono); font-size: 11px; color: var(--muted); margin-bottom: 12px; }
+
+/* idade (Progresso) */
+.th-age-row { display: flex; gap: 8px; margin-bottom: 6px; }
+.th-age-row input { flex: 1; background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px; padding: 10px; color: var(--chalk); font-family: var(--font-mono); font-size: 13px; }
+.th-age-row button { padding: 10px 14px; border-radius: 8px; border: none; background: var(--blue); color: #fff; font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; cursor: pointer; }
+
+/* feedback de FC pós-corrida */
+.th-hr-feedback { margin-top: 6px; font-size: 12px; font-family: var(--font-mono); }
+.th-hr-feedback[data-tone="ok"] { color: var(--green); }
+.th-hr-feedback[data-tone="high"] { color: var(--yellow); }
+.th-hr-feedback[data-tone="low"] { color: var(--muted); }
 </style>
 </head>
 <body>
@@ -265,6 +276,8 @@ let liveIndex = 0;
 let liveOpen = false;
 
 let selectedVariant = {}; // exercise_id -> alternative name or null (main)
+let paceTipOpen = {};     // day_key -> bool
+let userAge = null;       // settings.user_age, null se ainda não preenchida
 
 const root = document.getElementById('root');
 
@@ -308,6 +321,32 @@ function paceValue(distanceKm, durationMin) {
   return getPaceUnit() === 'kmh'
     ? +(distanceKm / (durationMin / 60)).toFixed(2)
     : +(durationMin / distanceKm).toFixed(2);
+}
+
+// ============================================================
+// Zona de frequência cardíaca alvo (60-70% da FC máxima estimada)
+// ============================================================
+function computeHRZone(age) {
+  if (!age) return null;
+  const hrMax = 220 - age;
+  return { min: Math.round(hrMax * 0.6), max: Math.round(hrMax * 0.7), hrMax };
+}
+
+function hrZoneLine() {
+  const zone = computeHRZone(userAge);
+  if (zone) {
+    return `Sua zona alvo: ${zone.min}–${zone.max} bpm (60–70% da sua FC máxima estimada, ${zone.hrMax} bpm).`;
+  }
+  return `Zona alvo de referência: 60–70% da FC máxima estimada — fórmula: 220 − idade. Preencha sua idade em "Ver progresso" pra ver sua zona calculada.`;
+}
+
+function computeHRFeedback(avgHr, age) {
+  if (!avgHr || !age) return null;
+  const zone = computeHRZone(age);
+  if (!zone) return null;
+  if (avgHr > zone.max) return { tone: 'high', text: '⚠️ acima da zona alvo — pode ter ido rápido demais' };
+  if (avgHr < zone.min) return { tone: 'low', text: 'tranquilo, dentro ou até abaixo do esperado — sem problema nenhum, errar pra esse lado é mais seguro' };
+  return { tone: 'ok', text: '✓ ritmo bem calibrado' };
 }
 
 async function refreshWeekSummary() {
@@ -389,7 +428,7 @@ async function init() {
       sb.from('exercises').select('*').order('order_index'),
       sb.from('run_sessions').select('*'),
       sb.from('run_progression').select('*').order('week'),
-      sb.from('settings').select('*').eq('key', 'current_week').maybeSingle(),
+      sb.from('settings').select('*').in('key', ['current_week', 'user_age']),
     ]), 9000);
     if (daysRes.error) throw daysRes.error;
     if (exRes.error) throw exRes.error;
@@ -407,9 +446,13 @@ async function init() {
     runByDay = {};
     (runRes.data || []).forEach(r => { runByDay[r.day_key] = r; });
     runProgression = progRes.data || [];
-    if (settingsRes.data && settingsRes.data.value) {
-      currentWeek = Math.max(1, Math.min(runProgression.length || 10, parseInt(settingsRes.data.value, 10) || 1));
+    const settingsRows = settingsRes.data || [];
+    const cwRow = settingsRows.find(r => r.key === 'current_week');
+    const ageRow = settingsRows.find(r => r.key === 'user_age');
+    if (cwRow && cwRow.value) {
+      currentWeek = Math.max(1, Math.min(runProgression.length || 10, parseInt(cwRow.value, 10) || 1));
     }
+    if (ageRow && ageRow.value) userAge = parseInt(ageRow.value, 10) || null;
     connectionOk = true;
   } catch (e) {
     if (e && e.message === 'TIMEOUT') {
@@ -644,12 +687,23 @@ function renderExercise(ex) {
   </div>`;
 }
 
+function renderPaceTipLines(run) {
+  const tipLines = (run.pace_tip || '').split('\n').map(s => s.trim()).filter(Boolean);
+  const hrLine = hrZoneLine();
+  return tipLines.length >= 2 ? [...tipLines.slice(0, 2), hrLine, ...tipLines.slice(2)] : [...tipLines, hrLine];
+}
+
 function renderRunBox(day, run) {
   const wk = runProgression[currentWeek - 1];
   const dist = wk ? wk[run.field] : '—';
+  const tipOpen = !!paceTipOpen[day.key];
   return `<div class="th-section-label">${run.label}</div>
     <div class="th-run-box"><span class="th-run-num">${dist}</span><span class="th-run-unit">km · ritmo fácil</span></div>
     <div class="th-run-desc">${run.description || ''}</div>
+    <div class="th-toggle-row">
+      <button class="th-alt-toggle" data-pacetip-toggle="${day.key}">${tipOpen ? 'Ocultar dica ⌃' : '💡 Como calibrar o ritmo ⌄'}</button>
+    </div>
+    <ul class="th-alt-list" id="pacetip-${day.key}" data-open="${tipOpen ? 'true' : 'false'}">${renderPaceTipLines(run).map(l => `<li>${l}</li>`).join('')}</ul>
     <div id="runCompare-${day.key}"></div>
     <button class="th-run-log-btn" data-log-run="${day.key}">Registrar corrida de hoje</button>
     <div id="runLogged-${day.key}"></div>
@@ -771,6 +825,17 @@ function attachDayEvents(day) {
     });
   });
 
+  document.querySelectorAll('[data-pacetip-toggle]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const key = btn.getAttribute('data-pacetip-toggle');
+      const open = paceTipOpen[key];
+      paceTipOpen[key] = !open;
+      btn.textContent = open ? '💡 Como calibrar o ritmo ⌄' : 'Ocultar dica ⌃';
+      const box = document.getElementById('pacetip-' + key);
+      box.setAttribute('data-open', paceTipOpen[key] ? 'true' : 'false');
+    });
+  });
+
   const liveStartBtn = document.getElementById('liveStartBtn');
   if (liveStartBtn) liveStartBtn.addEventListener('click', () => openLiveMode(day));
 
@@ -791,16 +856,20 @@ function attachDayEvents(day) {
       if (distInput === null) return;
       const durInput = prompt('Tempo (minutos):', '');
       const rpeInput = prompt('Esforço percebido, de 1 (fácil) a 10 (máximo):', '');
+      const hrInput = prompt('Frequência cardíaca média (bpm), se tiver relógio — deixe em branco se não souber:', '');
       const distance_km = parseFloat((distInput || '0').replace(',', '.')) || null;
       const duration_min = parseFloat((durInput || '').replace(',', '.')) || null;
       const rpe = parseInt(rpeInput, 10) || null;
-      if (!confirm(`Confirmar corrida: ${distance_km ?? '—'}km${duration_min ? ' em ' + duration_min + 'min' : ''}${rpe ? ' · RPE ' + rpe : ''}?`)) return;
+      const avg_heart_rate = hrInput && hrInput.trim() !== '' ? parseInt(hrInput, 10) || null : null;
+      if (!confirm(`Confirmar corrida: ${distance_km ?? '—'}km${duration_min ? ' em ' + duration_min + 'min' : ''}${rpe ? ' · RPE ' + rpe : ''}${avg_heart_rate ? ' · FC média ' + avg_heart_rate + 'bpm' : ''}?`)) return;
       try {
-        const { error } = await sb.from('run_logs').insert({ day_key: day.key, log_date: todayStr, distance_km, duration_min, rpe });
+        const { error } = await sb.from('run_logs').insert({ day_key: day.key, log_date: todayStr, distance_km, duration_min, rpe, avg_heart_rate });
         if (error) throw error;
         setStatus(true);
+        const feedback = computeHRFeedback(avg_heart_rate, userAge);
         document.getElementById('runLogged-' + day.key).innerHTML =
-          `<div class="th-run-logged">✓ registrado: ${distance_km}km${duration_min ? ' em ' + duration_min + 'min' : ''}${rpe ? ' · RPE ' + rpe : ''}</div>`;
+          `<div class="th-run-logged">✓ registrado: ${distance_km}km${duration_min ? ' em ' + duration_min + 'min' : ''}${rpe ? ' · RPE ' + rpe : ''}${avg_heart_rate ? ' · FC média ' + avg_heart_rate + 'bpm' : ''}</div>` +
+          (feedback ? `<div class="th-hr-feedback" data-tone="${feedback.tone}">${feedback.text}</div>` : '');
         refreshWeekSummary();
       } catch (e) { setStatus(false, 'Não consegui salvar a corrida: ' + (e.message || e)); }
     });
@@ -1246,7 +1315,7 @@ async function renderRunLogsSection() {
             const dayName = (days.find(d => d.key === r.day_key) || {}).name || r.day_key;
             return `<div class="th-body-list-row">
               <span>${formatDate(r.log_date)} · ${dayName}</span>
-              <span><b>${r.distance_km != null ? r.distance_km + 'km' : '—'}</b>${r.duration_min ? ' · ' + r.duration_min + 'min' : ''}${r.rpe ? ' · RPE ' + r.rpe : ''}
+              <span><b>${r.distance_km != null ? r.distance_km + 'km' : '—'}</b>${r.duration_min ? ' · ' + r.duration_min + 'min' : ''}${r.rpe ? ' · RPE ' + r.rpe : ''}${r.avg_heart_rate ? ' · ' + r.avg_heart_rate + 'bpm' : ''}
                 <button class="th-history-edit" data-edit-run="${r.id}">✎</button>
                 <button class="th-history-del" data-del-run="${r.id}">🗑</button>
               </span>
@@ -1268,11 +1337,13 @@ async function editRunLog(id) {
     if (distInput === null) return;
     const durInput = prompt('Tempo (minutos):', data.duration_min ?? '');
     const rpeInput = prompt('Esforço percebido, de 1 (fácil) a 10 (máximo):', data.rpe ?? '');
+    const hrInput = prompt('Frequência cardíaca média (bpm), deixe em branco se não souber:', data.avg_heart_rate ?? '');
     const distance_km = parseFloat((distInput || '').replace(',', '.')) || null;
     const duration_min = parseFloat((durInput || '').replace(',', '.')) || null;
     const rpe = parseInt(rpeInput, 10) || null;
-    if (!confirm(`Confirmar edição: ${distance_km ?? '—'}km${duration_min ? ' em ' + duration_min + 'min' : ''}${rpe ? ' · RPE ' + rpe : ''}?`)) return;
-    const { error: upErr } = await sb.from('run_logs').update({ distance_km, duration_min, rpe }).eq('id', id);
+    const avg_heart_rate = hrInput && hrInput.trim() !== '' ? parseInt(hrInput, 10) || null : null;
+    if (!confirm(`Confirmar edição: ${distance_km ?? '—'}km${duration_min ? ' em ' + duration_min + 'min' : ''}${rpe ? ' · RPE ' + rpe : ''}${avg_heart_rate ? ' · FC média ' + avg_heart_rate + 'bpm' : ''}?`)) return;
+    const { error: upErr } = await sb.from('run_logs').update({ distance_km, duration_min, rpe, avg_heart_rate }).eq('id', id);
     if (upErr) throw upErr;
     setStatus(true);
     await renderRunLogsSection();
@@ -1354,7 +1425,13 @@ function renderStreakGrid(countMap, skippedSet) {
 async function renderBodySection() {
   const card = document.getElementById('bodyCard');
   card.innerHTML = `
-    <div class="th-section-label" style="margin-top:0">Peso corporal</div>
+    <div class="th-section-label" style="margin-top:0">Idade</div>
+    <div class="th-age-row">
+      <input type="number" id="ageInput" placeholder="Idade" value="${userAge != null ? userAge : ''}">
+      <button id="ageSaveBtn">Salvar</button>
+    </div>
+    <div class="th-suggestion" id="ageStatus">${userAge != null ? `Idade atual: ${userAge} anos` : ''}</div>
+    <div class="th-section-label">Peso corporal</div>
     <div class="th-body-form">
       <input type="date" id="bmDate" value="${todayStr}">
       <input type="number" step="0.1" id="bmWeight" placeholder="Peso (kg)">
@@ -1365,8 +1442,22 @@ async function renderBodySection() {
     <canvas id="bmChart" height="160"></canvas>
     <div class="th-body-list" id="bmList"></div>
   `;
+  document.getElementById('ageSaveBtn').addEventListener('click', saveUserAge);
   document.getElementById('bmSave').addEventListener('click', saveBodyMeasurement);
   await loadAndRenderBodyMeasurements();
+}
+
+async function saveUserAge() {
+  const val = parseInt(document.getElementById('ageInput').value, 10);
+  if (!val || val < 1 || val > 120) { alert('Informe uma idade válida.'); return; }
+  if (!confirm(`Confirmar idade: ${val} anos?`)) return;
+  try {
+    const { error } = await sb.from('settings').upsert({ key: 'user_age', value: String(val) });
+    if (error) throw error;
+    userAge = val;
+    setStatus(true);
+    document.getElementById('ageStatus').textContent = `Idade atual: ${val} anos`;
+  } catch (e) { setStatus(false, 'Não consegui salvar a idade: ' + (e.message || e)); }
 }
 
 async function saveBodyMeasurement() {
